@@ -1,0 +1,378 @@
+<!doctype html>
+{% macro cipher_fields(prefix) %}
+<div class="field" data-only="rc4">
+  <label for="{{ prefix }}-rc4-key">Secret key</label>
+  <div class="input-row">
+    <input id="{{ prefix }}-rc4-key" name="rc4_key" type="text" class="mono grow" autocomplete="off" spellcheck="false" placeholder="1 to 256 bytes">
+    <select name="key_encoding" aria-label="Key encoding">
+      <option value="text">UTF-8 text</option>
+      <option value="hex">Hex bytes</option>
+    </select>
+  </div>
+  <p class="hint" data-key-readout>The key decides how the array is shuffled, and therefore the keystream.</p>
+</div>
+<div class="field" data-only="a51">
+  <label for="{{ prefix }}-a51-key">Session key Kc (64 bits)</label>
+  <input id="{{ prefix }}-a51-key" name="a51_key" type="text" class="mono" autocomplete="off" spellcheck="false" placeholder="16 hexadecimal characters">
+</div>
+<div class="field-grid" data-only="a51">
+  <div class="field">
+    <label for="{{ prefix }}-count-mode">Frame input</label>
+    <select id="{{ prefix }}-count-mode" name="count_mode">
+      <option value="count">COUNT (22-bit)</option>
+      <option value="fn">GSM TDMA frame number</option>
+    </select>
+  </div>
+  <div class="field" data-count-field="count">
+    <label for="{{ prefix }}-count">COUNT</label>
+    <input id="{{ prefix }}-count" name="count" type="text" class="mono" autocomplete="off" spellcheck="false" placeholder="0x134">
+  </div>
+  <div class="field" data-count-field="fn" hidden>
+    <label for="{{ prefix }}-fn">Frame number (FN)</label>
+    <input id="{{ prefix }}-fn" name="fn" type="text" class="mono" autocomplete="off" spellcheck="false" placeholder="0 to 2715647">
+  </div>
+  <div class="field">
+    <label for="{{ prefix }}-direction">Direction</label>
+    <select id="{{ prefix }}-direction" name="direction">
+      <option value="downlink">Downlink (first 114)</option>
+      <option value="uplink">Uplink (next 114)</option>
+    </select>
+  </div>
+</div>
+<p class="hint" data-only="a51" data-count-hint>COUNT is the 22-bit value the cipher consumes. An FN is converted first: COUNT = T1 ‖ T3 ‖ T2.</p>
+{% endmacro %}
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>EECE 455 — Stream Cipher Laboratory</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/animations.css') }}">
+  <script type="module" src="{{ url_for('static', filename='js/app.js') }}"></script>
+</head>
+<body data-algo="rc4" data-view="direct">
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="app-header">
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 40 40" aria-hidden="true">
+        <circle cx="20" cy="20" r="17"></circle>
+        <path d="M20 3v34M3 20h34"></path>
+      </svg>
+      <div>
+        <h1>EECE 455 — Stream Cipher Laboratory</h1>
+        <p class="subtitle">Project 9 | RC4 &amp; A5/1 GSM Encryption</p>
+      </div>
+    </div>
+  </header>
+
+  <nav class="main-nav" aria-label="Main">
+    <div class="segmented" role="group" aria-label="Algorithm">
+      <button type="button" class="seg-btn" data-set-algo="rc4" aria-pressed="true">RC4</button>
+      <button type="button" class="seg-btn" data-set-algo="a51" aria-pressed="false">A5/1</button>
+    </div>
+    <div class="tabs" role="group" aria-label="Section">
+      <button type="button" class="tab-btn" data-set-view="direct" aria-pressed="true">Direct Encryption/Decryption</button>
+      <button type="button" class="tab-btn" data-set-view="visualize" aria-pressed="false">Step-by-Step Visualization</button>
+      <button type="button" class="tab-btn" data-set-view="compare" aria-pressed="false">Compare Algorithms</button>
+      <button type="button" class="tab-btn" data-set-view="help" aria-pressed="false">Help</button>
+    </div>
+  </nav>
+
+  <main id="main">
+    <!-- ======================= DIRECT MODE ======================= -->
+    <section id="view-direct" class="view" data-view-panel="direct">
+      <div class="intro-strip">
+        <p data-only="rc4"><strong>RC4</strong> shuffles a 256-byte array with the key, then keeps shuffling while it emits one keystream byte per message byte.</p>
+        <p data-only="a51"><strong>A5/1</strong> combines three LFSRs under majority clocking, and produces 114 keystream bits per direction per frame. Messages of any length are handled as a bit stream.</p>
+      </div>
+      <div class="direct-grid">
+        <form id="encrypt-form" class="panel" novalidate>
+          <header class="panel-head">
+            <h2>Encrypt</h2>
+            <span class="tag" data-algo-name>RC4</span>
+          </header>
+
+          <div class="field">
+            <label for="enc-example">Example</label>
+            <div class="input-row">
+              <select id="enc-example" class="grow" name="example"></select>
+              <button type="button" class="btn" id="enc-load">Load Example</button>
+            </div>
+            <p class="hint" id="enc-example-note"></p>
+          </div>
+
+          <div class="field">
+            <div class="label-row">
+              <label for="enc-plaintext">Plaintext</label>
+              <select name="input_format" aria-label="Plaintext format" id="enc-format">
+                <option value="text">UTF-8 text</option>
+                <option value="hex">Hex bytes</option>
+                <option value="binary">Binary bits</option>
+              </select>
+            </div>
+            <textarea id="enc-plaintext" name="plaintext" rows="4" spellcheck="false" dir="auto" placeholder="Enter a message"></textarea>
+            <p class="hint" id="enc-length-readout">0 bytes · 0 bits</p>
+          </div>
+
+          {{ cipher_fields("enc") }}
+
+          <p class="form-error" role="alert" hidden></p>
+          <div class="button-row">
+            <button type="submit" class="btn btn-primary">Encrypt</button>
+            <button type="button" class="btn" id="enc-clear">Clear</button>
+          </div>
+          <div id="encrypt-result" class="result" aria-live="polite"></div>
+        </form>
+
+        <form id="decrypt-form" class="panel" novalidate>
+          <header class="panel-head">
+            <h2>Decrypt</h2>
+            <span class="tag" data-algo-name>RC4</span>
+          </header>
+
+          <div class="field">
+            <div class="label-row">
+              <label for="dec-ciphertext">Ciphertext</label>
+              <select name="ciphertext_encoding" aria-label="Ciphertext format" id="dec-format">
+                <option value="hex">Hexadecimal</option>
+                <option value="base64">Base64</option>
+              </select>
+            </div>
+            <textarea id="dec-ciphertext" name="ciphertext" rows="4" class="mono" spellcheck="false" placeholder="Paste a ciphertext, or use Send to Decryption"></textarea>
+          </div>
+
+          <div class="field" data-only="a51">
+            <label for="dec-bit-length">Meaningful bits (optional)</label>
+            <input id="dec-bit-length" name="bit_length" type="text" class="mono" autocomplete="off" placeholder="Leave blank to use every bit">
+            <p class="hint">Needed only when the message is not a whole number of bytes, because hex and Base64 add padding bits.</p>
+          </div>
+
+          {{ cipher_fields("dec") }}
+
+          <p class="form-error" role="alert" hidden></p>
+          <div class="button-row">
+            <button type="submit" class="btn btn-primary">Decrypt</button>
+            <button type="button" class="btn" id="dec-clear">Clear</button>
+            <label class="btn file-btn">
+              Import Record
+              <input type="file" id="dec-import" accept="application/json,.json" class="visually-hidden">
+            </label>
+          </div>
+          <div id="decrypt-result" class="result" aria-live="polite"></div>
+        </form>
+      </div>
+    </section>
+
+    <!-- ======================= VISUALIZATION MODE ======================= -->
+    <section id="view-visualize" class="view" data-view-panel="visualize" hidden>
+      <form id="viz-form" class="panel viz-config" novalidate>
+        <header class="panel-head">
+          <h2>Trace setup</h2>
+          <span class="tag" data-algo-name>RC4</span>
+        </header>
+        <div class="viz-config-grid">
+          <div class="field viz-message">
+            <div class="label-row">
+              <label for="viz-plaintext">Message</label>
+              <select name="input_format" aria-label="Message format">
+                <option value="text">UTF-8 text</option>
+                <option value="hex">Hex bytes</option>
+                <option value="binary">Binary bits</option>
+              </select>
+            </div>
+            <textarea id="viz-plaintext" name="plaintext" rows="2" spellcheck="false" dir="auto"></textarea>
+          </div>
+          <div class="viz-params">
+            {{ cipher_fields("viz") }}
+          </div>
+          <div class="viz-actions">
+            <div class="field">
+              <label for="viz-example">Example</label>
+              <select id="viz-example" name="example"></select>
+            </div>
+            <div class="field" data-only="a51" id="viz-segment-field" hidden>
+              <label for="viz-segment">Frame traced in the registers</label>
+              <select id="viz-segment" name="segment"></select>
+            </div>
+            <button type="submit" class="btn btn-primary">Build Visualization</button>
+          </div>
+        </div>
+        <p class="form-error" role="alert" hidden></p>
+      </form>
+
+      <div id="viz-workspace" hidden>
+        <div class="controls-bar" id="step-controls" role="group" aria-label="Step controls">
+          <div class="phase-chips" id="phase-chips" role="group" aria-label="Phase selector"></div>
+          <div class="transport">
+            <button type="button" class="btn" id="ctl-start" title="Rewind to the first step and play">Start</button>
+            <button type="button" class="btn" id="ctl-prev" title="Previous step (Left arrow)">◀ Previous</button>
+            <button type="button" class="btn btn-primary" id="ctl-play" title="Play or pause (Space)">▶ Play</button>
+            <button type="button" class="btn" id="ctl-next" title="Next step (Right arrow)">Next ▶</button>
+            <button type="button" class="btn" id="ctl-reset" title="Stop and return to the first step">Reset</button>
+            <span class="ctl-group">
+              <label for="ctl-speed">Speed</label>
+              <select id="ctl-speed">
+                <option value="0.5">0.5x</option>
+                <option value="1" selected>1x</option>
+                <option value="2">2x</option>
+                <option value="4">4x</option>
+              </select>
+            </span>
+            <span class="ctl-group">
+              <label for="ctl-jump">Jump to step</label>
+              <input id="ctl-jump" type="number" min="1" class="mono jump-input">
+              <button type="button" class="btn" id="ctl-jump-go">Go</button>
+            </span>
+            <span class="ctl-group" id="ctl-stride-group" hidden>
+              <label for="ctl-stride">XOR by</label>
+              <select id="ctl-stride">
+                <option value="1">Bit</option>
+                <option value="8">Byte</option>
+              </select>
+            </span>
+          </div>
+          <div class="progress-row">
+            <input type="range" id="ctl-progress" min="0" max="0" value="0" aria-label="Progress through the trace">
+            <span class="step-counter mono" id="ctl-counter">Step 0 / 0</span>
+          </div>
+        </div>
+
+        <div class="panel stage-head">
+          <div>
+            <h2 id="stage-phase-title">—</h2>
+            <p class="phase-desc" id="stage-phase-desc"></p>
+          </div>
+          <p class="explanation" id="stage-explanation" aria-live="polite"></p>
+        </div>
+
+        <div id="viz-stage"></div>
+        <p class="load-note" id="viz-loading" hidden>Loading steps…</p>
+      </div>
+
+      <details class="panel teaching" data-only="rc4" id="toy-rc4">
+        <summary>Simplified Teaching Example — Not Standard RC4</summary>
+        <p class="muted">An 8-element array makes each KSA swap easy to follow. Standard RC4 always uses 256 elements, so nothing here replaces the real trace above.</p>
+        <div class="toy-controls">
+          <label for="toy-key">Key values</label>
+          <input id="toy-key" class="mono" type="text" value="3, 1, 4" autocomplete="off">
+          <button type="button" class="btn" id="toy-build">Build</button>
+          <button type="button" class="btn" id="toy-prev">◀ Previous</button>
+          <button type="button" class="btn" id="toy-next">Next ▶</button>
+          <span class="mono muted" id="toy-counter"></span>
+        </div>
+        <p class="form-error" id="toy-error" role="alert" hidden></p>
+        <div class="toy-array" id="toy-array"></div>
+        <p class="equation mono" id="toy-equation"></p>
+      </details>
+    </section>
+
+    <!-- ======================= COMPARE ======================= -->
+    <section id="view-compare" class="view" data-view-panel="compare" hidden>
+      <div class="panel">
+        <header class="panel-head"><h2>RC4 and A5/1 side by side</h2></header>
+        <div class="table-wrap">
+          <table class="compare-table">
+            <thead><tr><th scope="col">Feature</th><th scope="col">RC4</th><th scope="col">A5/1</th></tr></thead>
+            <tbody>
+              <tr><th scope="row">Cipher type</th><td>Stream cipher</td><td>Stream cipher</td></tr>
+              <tr><th scope="row">Main historical application</th><td>General-purpose protocols (SSL/TLS, WEP, WPA-TKIP)</td><td>GSM 2G radio link</td></tr>
+              <tr><th scope="row">Key</th><td>Variable length (1 to 256 bytes)</td><td>64 bits</td></tr>
+              <tr><th scope="row">Per-message input</th><td>None in the cipher itself</td><td>22-bit COUNT</td></tr>
+              <tr><th scope="row">Internal mechanism</th><td>256-byte permutation</td><td>Three LFSRs (19, 22 and 23 bits)</td></tr>
+              <tr><th scope="row">Main operation</th><td>KSA and PRGA</td><td>Majority clocking</td></tr>
+              <tr><th scope="row">Output</th><td>Keystream bytes</td><td>Keystream bits</td></tr>
+              <tr><th scope="row">Encryption</th><td>XOR</td><td>XOR</td></tr>
+              <tr><th scope="row">Modern security</th><td class="bad">Insecure</td><td class="bad">Insecure</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="learn-grid">
+        <div class="panel">
+          <header class="panel-head"><h2>Foundations</h2></header>
+          <details><summary>What is a stream cipher?</summary><p>A symmetric cipher that encrypts data a bit or byte at a time by combining it with a stream of pseudo-random values. Unlike a block cipher, it needs no fixed block size and no padding.</p></details>
+          <details><summary>What is a keystream?</summary><p>The pseudo-random sequence produced from the key. Sender and receiver generate the same keystream independently, so it is never transmitted.</p></details>
+          <details><summary>What is symmetric encryption?</summary><p>Encryption where both parties use the same secret key. The security of the system depends on keeping that key secret.</p></details>
+          <details><summary>What is XOR?</summary>
+            <p>Exclusive OR outputs 1 when its two input bits differ. Because (P ⊕ K) ⊕ K = P, applying the same keystream twice returns the original message, so encryption and decryption are the same operation.</p>
+            <table class="truth-table mono"><thead><tr><th scope="col">A</th><th scope="col">B</th><th scope="col">A ⊕ B</th></tr></thead>
+              <tbody><tr><td>0</td><td>0</td><td>0</td></tr><tr><td>0</td><td>1</td><td>1</td></tr><tr><td>1</td><td>0</td><td>1</td></tr><tr><td>1</td><td>1</td><td>0</td></tr></tbody>
+            </table>
+          </details>
+          <details><summary>Why do stream ciphers require careful keystream management?</summary><p>If two messages use the same keystream, then C₁ ⊕ C₂ = P₁ ⊕ P₂. The key cancels out, and an attacker can often recover both messages from that value. So a key and frame value pair must never be reused for different data. A stream cipher also gives no integrity: flipping a ciphertext bit flips the same plaintext bit.</p></details>
+        </div>
+
+        <div class="panel">
+          <header class="panel-head"><h2>RC4</h2></header>
+          <details><summary>Why does RC4 use a 256-element array?</summary><p>One entry for each possible byte value. The array is always a permutation of 0 to 255, and values read from it are used as indexes into it, which suits fast byte-oriented software.</p></details>
+          <details><summary>What does KSA do?</summary><p>The Key Scheduling Algorithm starts from the array 0, 1, …, 255 and makes 256 swaps chosen by the key. The result is a key-dependent permutation.</p></details>
+          <details><summary>What does PRGA do?</summary><p>The Pseudo-Random Generation Algorithm updates i and j, swaps S[i] and S[j], and outputs S[(S[i] + S[j]) mod 256]. The array keeps changing as output is produced.</p></details>
+          <details><summary>Why is RC4 considered insecure?</summary><p>Its output has statistical biases, especially in the first bytes, and WEP's use of related keys allowed key recovery. RFC 7465 prohibits RC4 in TLS.</p></details>
+        </div>
+
+        <div class="panel">
+          <header class="panel-head"><h2>A5/1</h2></header>
+          <details><summary>What is an LFSR?</summary><p>A Linear Feedback Shift Register shifts its bits by one position per clock, and computes the new input bit as the XOR of selected positions called taps. It is cheap in hardware, but a single LFSR is predictable because its output is linear.</p></details>
+          <details><summary>What is majority clocking?</summary><p>Each register has one clocking bit. The cycle's majority value is the one held by at least two of those bits, and only registers matching it advance. So two or three registers move each cycle, and each moves with probability 3/4.</p></details>
+          <details><summary>Why does A5/1 use three registers?</summary><p>Together they hold 64 bits of state, and their outputs are combined with XOR. Irregular clocking makes each register's movement depend on the others, which removes the simple linear structure of a regularly clocked LFSR.</p></details>
+          <details><summary>What is the GSM session key?</summary><p>Kc is a 64-bit key that the SIM and the network derive during authentication, from the SIM's long-term secret and a random challenge. This lab uses sample keys only, and it does not implement GSM authentication.</p></details>
+          <details><summary>What is the purpose of the frame count?</summary><p>Mixing a frame-dependent COUNT into the registers gives every frame a different keystream under the same Kc. COUNT is derived from the TDMA frame number, but the two are different numbers.</p></details>
+        </div>
+      </div>
+
+      <div class="panel security-note">
+        <header class="panel-head"><h2>Security limitations</h2></header>
+        <ul>
+          <li><strong>Do not use these algorithms to protect real data.</strong> RC4 and A5/1 both have known practical weaknesses. A5/1 can be attacked with precomputed tables.</li>
+          <li><strong>A5/1 is not end-to-end encryption.</strong> It protects only the GSM radio link between a handset and the base station.</li>
+          <li><strong>Keystream reuse is fatal.</strong> Encrypting two messages with the same key and frame value reveals the XOR of the messages.</li>
+          <li><strong>This is not a GSM implementation.</strong> It has no authentication, signalling or radio framing, and it does not connect to mobile networks. Use sample keys, never real SIM keys.</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ======================= HELP ======================= -->
+    <section id="view-help" class="view" data-view-panel="help" hidden>
+      <div class="learn-grid">
+        <div class="panel">
+          <header class="panel-head"><h2>Direct Mode</h2></header>
+          <ol class="help-list">
+            <li>Choose RC4 or A5/1 at the top of the page.</li>
+            <li>Enter a message, or pick an example and select <em>Load Example</em>.</li>
+            <li>Enter the key. A5/1 also needs COUNT (or an FN) and a direction.</li>
+            <li>Select <em>Encrypt</em> to see the ciphertext, keystream and lengths.</li>
+            <li>Select <em>Send to Decryption</em>, then <em>Decrypt</em> to recover the message.</li>
+            <li><em>Export Record</em> saves a JSON file with the ciphertext and parameters, but never the key. <em>Import Record</em> loads it again.</li>
+          </ol>
+        </div>
+        <div class="panel">
+          <header class="panel-head"><h2>Visualization Mode</h2></header>
+          <ol class="help-list">
+            <li>Set up the message and key, then select <em>Build Visualization</em>.</li>
+            <li>Use the phase buttons to jump to any stage of the algorithm.</li>
+            <li>Step with <em>Previous</em> and <em>Next</em>, or use <em>Play</em> and choose a speed.</li>
+            <li>Drag the progress bar, or enter a step number under <em>Jump to step</em>.</li>
+            <li>Every step comes from the Python implementation, so going back shows the true earlier state.</li>
+          </ol>
+          <p class="muted">Keyboard: Left and Right arrows step, Space plays or pauses. These work when focus is not in a text field.</p>
+        </div>
+        <div class="panel">
+          <header class="panel-head"><h2>Message length with A5/1</h2></header>
+          <ul class="help-list">
+            <li><strong>Under 114 bits:</strong> one frame is generated, and the extra keystream bits go unused. Nothing is padded.</li>
+            <li><strong>Exactly 114 bits:</strong> the whole sequence is used. Choose <em>Binary bits</em> to enter exact bit counts.</li>
+            <li><strong>Over 114 bits:</strong> the message is split into segments of up to 114 bits. Each segment reinitializes the cipher with the next COUNT (mod 2²²). With an FN, the FN advances (mod 2715648), and each COUNT is derived from it. This is an educational convention, not GSM framing.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="app-footer">
+    <p>Computation stays on this machine, and keys and messages are not stored. RC4 and A5/1 are not recommended for protecting modern communications.</p>
+  </footer>
+</body>
+</html>

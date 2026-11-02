@@ -1,0 +1,68 @@
+/* Motion lives here so it can be switched off in one place. */
+
+.view:not([hidden]) {
+  animation: view-in 180ms ease-out;
+}
+
+@keyframes view-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+
+.cell,
+.toy-cell {
+  transition: background-color 160ms ease, border-color 160ms ease;
+}
+
+.reg {
+  transition: opacity 180ms ease;
+}
+
+.reg-cell {
+  transition: fill 160ms ease;
+}
+
+.byte.latest,
+.stream-bit.latest,
+.xbit.current {
+  animation: pop 220ms ease-out;
+}
+
+@keyframes pop {
+  from { transform: scale(1.35); }
+  to { transform: scale(1); }
+}
+
+.btn.is-busy {
+  position: relative;
+  color: transparent;
+}
+
+.btn.is-busy::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 16px;
+  height: 16px;
+  border: 2px solid #fffdf8;
+  border-left-color: transparent;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 700ms linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
