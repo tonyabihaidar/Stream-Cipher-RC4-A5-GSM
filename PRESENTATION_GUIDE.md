@@ -10,14 +10,16 @@ python app.py
 
 - Open <http://127.0.0.1:5000> and go full screen. Zoom the browser to 110–125% if the room is large.
 - Run `python -m unittest discover -s tests` beforehand, and keep the final `OK` line ready in a terminal.
+- Make sure **Show step-by-step** is off when you start. The browser remembers the switch between visits.
 - **Keyboard:** Left and Right arrows step, Space plays or pauses. These work when focus is not in a text field, so click on an empty part of the page first.
 - If something goes wrong during a live step, **Reset** or reloading the page is always safe, since nothing is stored.
+- To open with a quick overview of the tool, press **Help** for the guided tour.
 
 ## Demonstration plan
 
 ### 1. Introduction to stream ciphers (1 min)
 
-**Show:** Compare Algorithms, then expand *What is a stream cipher?*
+**Show:** Learn Your Algorithms, then expand *What is a stream cipher?*
 
 **Say:** A stream cipher turns a key into a long pseudo-random keystream, and combines it with the message bit by bit. There are no blocks and no padding. We implemented two historically important ones by hand: RC4 and A5/1.
 
@@ -27,15 +29,15 @@ python app.py
 
 **Say:** XOR is its own inverse: (P ⊕ K) ⊕ K = P. So decrypting is the same operation as encrypting. All the difficulty lies in generating the keystream, and that is what the rest of this demo shows.
 
-### 3. RC4 direct encryption (1 min)
+### 3. RC4 encryption (1 min)
 
-**Do:** Direct Encryption/Decryption → RC4 → Example: *Key / Plaintext (published vector)* → **Encrypt**.
+**Do:** Encrypt & Decrypt → RC4 → Example: *Key / Plaintext (published vector)* → **Encrypt**.
 
-**Point out:** The result, `BBF316E8D940AF0AD3`, matches the published vector shown under the example. Note 9 bytes in, 9 keystream bytes, 9 bytes out, and no padding.
+**Point out:** The result, `BBF316E8D940AF0AD3`, matches the published vector shown under the example. Note 9 bytes in, 9 keystream bytes, 9 bytes out, and no padding. You can also show **Random**, which fills in a new key.
 
 ### 4. RC4 KSA (2 min)
 
-**Do:** Step-by-Step Visualization → RC4 → build with key `Key` → phase **KSA**. Press Next a few times, then Play at 2x.
+**Do:** Turn on **Show step-by-step**. The steps for the message and key in the Encrypt panel appear below the panels. Choose phase **KSA**, press Next a few times, then Play at 2x.
 
 **Point out:**
 - Teal is `i`, plum is `j`. They swap on screen.
@@ -52,15 +54,15 @@ python app.py
 
 ### 6. RC4 XOR and decryption (1 min)
 
-**Do:** Phase **XOR** and step through the first byte. The bits are `01010000 ⊕ 11101011 = 10111011`, which is `0xBB`, the first ciphertext byte we saw in Direct Mode.
+**Do:** Phase **XOR** and step through the first byte. The bits are `01010000 ⊕ 11101011 = 10111011`, which is `0xBB`, the first ciphertext byte in the Encrypt result above.
 
-**Then:** Back to Direct Mode → **Send to Decryption** → **Decrypt**. Then change the key and decrypt again to show that a wrong key gives garbage, not an error.
+**Then:** Scroll up, press **Send to Decryption**, then **Decrypt**. Then change the key in the Decrypt panel and decrypt again to show that a wrong key gives garbage, not an error.
 
 **Say:** Stream ciphers have no integrity check, so nothing tells you the key is wrong.
 
 ### 7. A5/1 registers (1 min)
 
-**Do:** Switch to A5/1 → Step-by-Step. The reference key `1223456789ABCDEF` and COUNT `0x134` are already loaded, with message `HI`.
+**Do:** Switch to **A5/1** at the top. Leave **Show step-by-step** on, and choose the example *HI (short message)*. It loads the reference key `1223456789ABCDEF`, COUNT `0x134` and the message `HI`, and the steps rebuild on their own.
 
 **Point out:** Three registers of 19, 22 and 23 bits, 64 bits in total. Blue outlines are feedback taps, the heavy black outline is the clocking bit, and green is the output bit. Bit 0 is on the right, so new bits enter on the right.
 
@@ -88,19 +90,19 @@ python app.py
 
 ### 10. A5/1 encryption and decryption (1 min)
 
-**Do:** Phase **XOR** and step through a few bits of `HI`. Then in Direct Mode, choose *HI (short message)* → **Encrypt** → **Send to Decryption** → **Decrypt**.
+**Do:** Phase **XOR** and step through a few bits of `HI`. Then scroll up and press **Encrypt** → **Send to Decryption** → **Decrypt**.
 
-**Point out:** The ciphertext `1B07` matches what the visualization produced. The direction and COUNT are carried across, because decryption must use the same values.
+**Point out:** The ciphertext `1B07` matches what the steps produced. The direction and COUNT are carried across, because decryption must use the same values.
 
 ### 11. Short versus long plaintext (1 min)
 
-**Do:** In Direct Mode, point at the numbers for `HI`: 16 bits, 114 generated, 16 used, 98 unused. Then choose *Multi-frame message* → **Encrypt**, and show the frames table with COUNT rising by 1 per segment.
+**Do:** Point at the numbers for `HI`: 16 bits, 114 generated, 16 used, 98 unused. Then choose *Multi-frame message* → **Encrypt**, and show the frames table with COUNT rising by 1 per segment. In the steps, the XOR phase moves on to a new frame after 114 bits.
 
 **Say:** We never pad the message. Longer messages reinitialize the cipher with the next COUNT. This is our documented educational convention, not GSM framing, which works on fixed radio bursts.
 
 ### 12. Comparison and security limitations (1 min)
 
-**Show:** Compare Algorithms → the table and the security panel.
+**Show:** Learn Your Algorithms → the table and the security panel.
 
 **Say:** Both ciphers are insecure today. RC4 is biased, and RFC 7465 prohibits it in TLS. A5/1 can be attacked with precomputed tables, and it only protects the radio link, not end to end. Keystream reuse would be fatal for either. This project is about understanding how they work.
 
@@ -109,7 +111,7 @@ python app.py
 ## Likely questions
 
 **How do you know the visualization is real?**
-Traces are recorded by callbacks inside the same functions that encrypt, and the tests check that traces and Direct Mode give identical output.
+Traces are recorded by callbacks inside the same functions that encrypt, and the tests check that the steps and the Encrypt result give identical output.
 
 **How does going backward work?**
 Each step is a complete snapshot from Python. Nothing gets undone, so an earlier step always shows exactly what was true then.
@@ -123,11 +125,14 @@ COUNT is the 22-bit value the cipher consumes. It is built from the TDMA frame n
 **Why does the Osmocom key look reversed?**
 libosmocore stores the same key with its bytes reversed (`key[7 - (i >> 3)]`). We follow the reference code's order, and we test against an Osmocom vector by reversing the key.
 
+**How are random keys generated?**
+In the browser, with `crypto.getRandomValues`, the operating system's cryptographic random generator. RC4 gets 16 bytes and A5/1 gets 8 bytes.
+
 **What happens at COUNT 0x3FFFFF?**
 The next segment wraps to 0. This is tested.
 
 **Why is the trace limited to 256 bytes?**
-Each step is a full snapshot, so traces grow quickly. Direct Mode handles up to 16 KiB.
+Each step is a full snapshot, so traces grow quickly. Encrypt itself handles up to 16 KiB either way.
 
 **Could this be used to intercept GSM calls?**
 No. It only processes text you give it. It has no radio, signalling or network component.

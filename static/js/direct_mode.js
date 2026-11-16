@@ -7,6 +7,7 @@ import {
   copyButton,
   el,
   populateExamples,
+  randomKey,
   readCipherFields,
   showFormError,
   syncCountMode,
@@ -251,8 +252,20 @@ export function initDirectMode(state) {
     saveJson(`${result.algorithm}-ciphertext-record.json`, result.record);
   }
 
+  encryptForm.querySelectorAll("[data-random-key]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const field = state.algorithm === "rc4" ? encryptForm.elements.rc4_key : encryptForm.elements.a51_key;
+      field.value = randomKey(state.algorithm, encryptForm.elements.key_encoding.value);
+      field.removeAttribute("aria-invalid");
+      exampleSelect.value = "";
+      exampleNote.textContent = "";
+      clear(encryptResult);
+    });
+  });
+
   encryptForm.addEventListener("submit", (event) => {
     event.preventDefault();
+    state.emit("inputs");
     const request = {
       ...readCipherFields(encryptForm, state.algorithm),
       plaintext: plaintext.value,
@@ -287,6 +300,7 @@ export function initDirectMode(state) {
     writeCipherFields(encryptForm, example.algorithm, example.fields);
     clear(encryptResult);
     updateReadout();
+    state.emit("inputs");
     exampleNote.textContent = example.published_ciphertext
       ? `${example.description} Expected ciphertext (${example.reference}): ${example.published_ciphertext}`
       : example.description;
@@ -304,6 +318,7 @@ export function initDirectMode(state) {
     exampleNote.textContent = "";
     lastEncrypt = null;
     updateReadout();
+    state.emit("inputs");
   });
 
   document.getElementById("dec-clear").addEventListener("click", () => {

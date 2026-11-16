@@ -1,7 +1,13 @@
-// Application shell: tracks the selected algorithm and view, and starts each mode.
+// Application shell: tracks the selected algorithm and view, and starts each part.
+//
+// Events sent through AppState:
+//   "algorithm"  the user switched between RC4 and A5/1
+//   "view"       the user switched between the workspace and the Learn page
+//   "inputs"     the Encrypt panel's message or key was submitted, loaded or cleared
 
 import { api } from "./api.js";
 import { initDirectMode } from "./direct_mode.js";
+import { initTour } from "./tour.js";
 import { initVisualizationMode } from "./visualization_mode.js";
 
 const ALGORITHM_NAMES = { rc4: "RC4", a51: "A5/1" };
@@ -9,7 +15,7 @@ const ALGORITHM_NAMES = { rc4: "RC4", a51: "A5/1" };
 class AppState {
   constructor() {
     this.algorithm = "rc4";
-    this.view = "direct";
+    this.view = "workspace";
     this.examples = [];
     this.listeners = new Set();
   }
@@ -60,8 +66,11 @@ async function main() {
   document.querySelectorAll("[data-set-view]").forEach((button) => {
     button.addEventListener("click", () => state.setView(button.dataset.setView));
   });
-  state.subscribe(() => syncShell(state));
+  state.subscribe((change) => {
+    if (change !== "inputs") syncShell(state);
+  });
   syncShell(state);
+  initTour(state);
 
   try {
     state.examples = (await api.examples()).examples;

@@ -13,8 +13,8 @@ An interactive educational application that implements RC4 and the GSM cipher A5
 3. [Project architecture](#3-project-architecture)
 4. [Installation and running](#4-installation-and-running)
 5. [Running the automated tests](#5-running-the-automated-tests)
-6. [Using Direct Mode](#6-using-direct-mode)
-7. [Using Visualization Mode](#7-using-visualization-mode)
+6. [Using the app](#6-using-the-app)
+7. [Following the steps](#7-following-the-steps)
 8. [RC4 explained](#8-rc4-explained)
 9. [A5/1 explained](#9-a51-explained)
 10. [Plaintext-length handling](#10-plaintext-length-handling)
@@ -27,8 +27,8 @@ An interactive educational application that implements RC4 and the GSM cipher A5
 ## 1. Project objectives
 
 - Implement RC4 and A5/1 by hand, using no cryptography libraries, and verify both against published test vectors.
-- Provide a **Direct Mode** for encrypting and decrypting real messages, including Unicode text.
-- Provide a **Step-by-Step Mode** showing real internal states: array permutations, swaps, register contents, majority clocking, keystream generation and XOR.
+- Encrypt and decrypt real messages, including Unicode text.
+- Show, with a **Show step-by-step** switch on the same page, the real internal states: array permutations, swaps, register contents, majority clocking, keystream generation and XOR.
 - Show that the visualization is the real algorithm: traces are recorded from the same functions that do the encryption.
 
 ## 2. Technology stack
@@ -66,7 +66,8 @@ EECE455_Project/
 │       ├── app.js             Selected algorithm and view
 │       ├── api.js             JSON API client
 │       ├── dom.js             Shared DOM and form helpers
-│       ├── direct_mode.js     Direct Mode
+│       ├── direct_mode.js     Encrypt and Decrypt panels, random keys
+│       ├── tour.js            Guided tour behind the Help button
 │       ├── visualization_mode.js   Trace setup and step paging
 │       ├── step_controls.js   Play, pause, jump, phases, speed, progress
 │       ├── rc4_visualization.js    Array grid, equations, XOR view
@@ -74,7 +75,7 @@ EECE455_Project/
 └── tests/                     test_rc4, test_a51, test_encoding, test_api
 ```
 
-**How the visualization stays honest.** `rc4.ksa`, `rc4.prga` and `a51.generate_frame` take an optional `on_step` callback. Direct Mode calls them without it, and `trace_service.py` passes a callback that records each step. There is no second copy of either algorithm to drift out of sync, and the tests check that traces and direct output agree.
+**How the visualization stays honest.** `rc4.ksa`, `rc4.prga` and `a51.generate_frame` take an optional `on_step` callback. Plain encryption calls them without it, and `trace_service.py` passes a callback that records each step. There is no second copy of either algorithm to drift out of sync, and the tests check that traces and direct output agree.
 
 **How going backward works.** Every step is a complete snapshot of the state, so moving back just displays an earlier snapshot. No swap or register shift is ever undone.
 
@@ -123,26 +124,30 @@ python -m unittest discover -s tests -v
 
 The tests do not run the JavaScript in a browser. `test_api.py` statically checks that the scripts and the backend agree on field names and element IDs.
 
-## 6. Using Direct Mode
+## 6. Using the app
+
+Everything happens on one page. The top bar has the **RC4 / A5/1** switch, the **Encrypt & Decrypt** and **Learn Your Algorithms** pages, and a **Help** button.
 
 1. Choose **RC4** or **A5/1** at the top of the page.
 2. Enter a message, or pick an **Example**.
-3. Enter the key. A5/1 also needs COUNT (or a frame number) and a direction.
+3. Enter the key, or press **Random** for a new one. A5/1 also needs COUNT (or a frame number) and a direction.
 4. Select **Encrypt**. You get the ciphertext in hex, Base64 and binary, the keystream used, the lengths, and for A5/1 a table of frames.
 5. Select **Send to Decryption**, then **Decrypt**. The ciphertext and parameters are copied across, and the original message comes back.
 
 Other features:
 
+- **Help:** a short guided tour. It highlights each part of the page in turn, with **Next** to continue and **Skip** to leave. Esc also closes it.
+- **Random keys:** generated in the browser with `crypto.getRandomValues`. RC4 gets 16 bytes, written as hex or as letters and digits depending on the key encoding (`utf-8` or `hex`). A5/1 gets 8 bytes as 16 hex characters.
 - **Input formats:** UTF-8 text, hex bytes or binary bits. Binary allows exact bit counts with A5/1, such as exactly 114 bits.
 - **Export Record / Import Record:** saves or loads a JSON file containing the ciphertext, algorithm, frame parameters, direction, encoding and bit length. The key is never included.
 - **Wrong keys:** a stream cipher cannot detect a wrong key. If the output is not valid UTF-8, the app shows the recovered bytes as hex and explains why.
 
-Direct Mode accepts up to 16 KiB per message.
+Encrypt and Decrypt accept up to 16 KiB per message.
 
-## 7. Using Visualization Mode
+## 7. Following the steps
 
-1. Open **Step-by-Step Visualization**. A default trace is built automatically.
-2. Change the message or key and select **Build Visualization**, or pick an example.
+1. Turn on **Show step-by-step**, above the Encrypt and Decrypt panels. The browser remembers this setting.
+2. The steps appear below the panels and follow the message and key in the **Encrypt** panel. Loading an example rebuilds them straight away. After editing the message or key, press **Encrypt** to rebuild them.
 3. Navigate with these controls:
 
 | Control | Action |
@@ -158,13 +163,15 @@ Direct Mode accepts up to 16 KiB per message.
 | XOR by (A5/1) | Step through the XOR phase by bit or by byte |
 | Frame traced (A5/1) | For multi-frame messages, choose which frame's registers to show |
 
+The steps always show encryption. Decryption uses the same keystream and the same XOR, with plaintext and ciphertext swapped.
+
 **RC4 phases:** Initial array → KSA (256 iterations) → Shuffled array → PRGA → XOR. An optional 8-element demonstration sits at the bottom of the page and is labelled as non-standard.
 
 **A5/1 phases:** Clear → Load key (64) → Load COUNT (22) → Initialized → Warm-up (100) → Keystream (228) → XOR.
 
 In the A5/1 diagram, bit 0 is on the right. New bits enter on the right and output bits leave on the left, just as `reg << 1` behaves on a binary number. The diagram shows registers *after* the step's clock, and the state table shows the value before it as well.
 
-Traces are limited to 256 bytes of message, because each step is sent as a full snapshot. Use Direct Mode for longer messages.
+Traces are limited to 256 bytes of message, because each step is sent as a full snapshot. Encrypt still works on longer messages: only the steps are skipped.
 
 ## 8. RC4 explained
 
@@ -189,7 +196,7 @@ S[i], S[j] = S[j], S[i]
 keystream_byte = S[(S[i] + S[j]) % 256]
 ```
 
-**Encryption and decryption are the same operation:** each byte is XORed with a keystream byte. Keys may be 1 to 256 bytes, entered as UTF-8 text or hex. No padding is ever added. Each operation starts from a freshly initialized state.
+**Encryption and decryption are the same operation:** each byte is XORed with a keystream byte. Keys may be 1 to 256 bytes, entered as `utf-8` text or `hex`. No padding is ever added. Each operation starts from a freshly initialized state.
 
 ## 9. A5/1 explained
 

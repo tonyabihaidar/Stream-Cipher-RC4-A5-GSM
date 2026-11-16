@@ -283,8 +283,8 @@ class VisualizeApiTests(ApiTestCase):
         self.assert_error(self.post("/api/visualize", {**RC4_FIELDS, "plaintext": "A", "count_steps": 500}), 400, "count_steps")
 
     def test_trace_message_size_is_limited(self):
-        self.assert_error(self.post("/api/visualize", {**RC4_FIELDS, "plaintext": "x" * 257}), 400, "plaintext", "Direct Mode")
-        self.assert_error(self.post("/api/visualize", {**A51_FIELDS, "plaintext": "x" * 257}), 400, "plaintext", "Direct Mode")
+        self.assert_error(self.post("/api/visualize", {**RC4_FIELDS, "plaintext": "x" * 257}), 400, "plaintext", "step-by-step")
+        self.assert_error(self.post("/api/visualize", {**A51_FIELDS, "plaintext": "x" * 257}), 400, "plaintext", "step-by-step")
 
     def test_trace_window_validation(self):
         self.assert_error(self.post("/api/visualize", {**RC4_FIELDS, "plaintext": "A", "phase": "nope"}), 400, "phase")
@@ -385,9 +385,22 @@ class FrontendContractTests(ApiTestCase):
         page = self.client.get("/").get_data(as_text=True)
         for name in ("rc4_key", "key_encoding", "a51_key", "count_mode", "count", "fn", "direction", "plaintext", "input_format", "ciphertext", "ciphertext_encoding", "bit_length"):
             self.assertIn(f'name="{name}"', page)
-        for script in ("step_controls.js", "visualization_mode.js", "direct_mode.js"):
+        for script in ("step_controls.js", "visualization_mode.js", "direct_mode.js", "tour.js"):
             for element_id in re.findall(r'getElementById\("([\w-]+)"\)', self.read(f"static/js/{script}")):
                 self.assertIn(f'id="{element_id}"', page, f"{script}: {element_id}")
+
+    def test_single_page_layout_and_labels(self):
+        page = self.client.get("/").get_data(as_text=True)
+        self.assertIn("Learn Your Algorithms", page)
+        self.assertNotIn("Compare Algorithms", page)
+        self.assertIn('id="viz-toggle" role="switch"', page)
+        self.assertIn('<option value="text">utf-8</option>', page)
+        self.assertIn('<option value="hex">hex</option>', page)
+        self.assertNotIn('data-set-view="visualize"', page)
+        self.assertEqual(page.count("data-random-key"), 2)
+        tour = self.read("static/js/tour.js")
+        for target in re.findall(r'target: "([\w-]+)"', tour):
+            self.assertIn(f'data-tour="{target}"', page, target)
 
     def test_no_external_resources(self):
         page = self.client.get("/").get_data(as_text=True)

@@ -37,7 +37,8 @@ def build_visualization(payload: dict) -> dict:
     params = parse_params(payload)
     limit = MAX_TRACE_RC4_BYTES if params.algorithm == "rc4" else MAX_TRACE_A51_BYTES
     too_long = (
-        f"Step-by-step traces are limited to {limit} bytes so they stay usable. Use Direct Mode for longer messages."
+        f"The step-by-step view is limited to {limit} bytes so it stays usable. "
+        "Encrypt still works on longer messages, up to 16 KiB."
     )
     data, bit_length, _ = parse_plaintext(payload, params.algorithm, limit, too_long)
 

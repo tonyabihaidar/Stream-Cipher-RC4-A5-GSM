@@ -7,8 +7,10 @@ import { clear, el } from "./dom.js";
 const BASE_DELAY_MS = 1000;
 
 export class StepControls {
-  constructor(renderStep) {
+  // isActive says whether keyboard shortcuts should drive these controls right now.
+  constructor(renderStep, isActive) {
     this.renderStep = renderStep;
+    this.isActive = isActive;
     this.total = 0;
     this.index = 0;
     this.phases = [];
@@ -198,7 +200,7 @@ export class StepControls {
   }
 
   onKey(event) {
-    if (this.total === 0 || document.body.dataset.view !== "visualize") return;
+    if (this.total === 0 || !this.isActive() || document.body.classList.contains("tour-open")) return;
     const tag = event.target.tagName;
     if (["INPUT", "TEXTAREA", "SELECT"].includes(tag) || event.altKey || event.ctrlKey || event.metaKey) return;
     if (event.key === "ArrowRight") {

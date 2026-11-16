@@ -131,6 +131,73 @@ h1 { font-size: 1.55rem; font-weight: 600; line-height: 1.2; }
 
 .tabs { display: flex; flex-wrap: wrap; gap: 2px; }
 
+.help-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  align-self: center;
+  margin-left: auto;
+  padding: 6px 14px 6px 8px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: var(--mark);
+  color: var(--ink);
+  font: 700 0.95rem var(--font);
+  cursor: pointer;
+}
+.help-btn:hover { background: #ffd51a; }
+.help-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--ink);
+  color: var(--mark);
+  font-size: 0.85rem;
+}
+
+/* The step-by-step on/off switch. The checkbox stays in place for keyboards and screen readers. */
+.switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 8px 14px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: var(--sheet);
+  color: var(--ink);
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  user-select: none;
+}
+.switch input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.switch-track {
+  position: relative;
+  width: 44px;
+  height: 24px;
+  border-radius: 999px;
+  background: var(--rule-strong);
+  transition: background-color 160ms ease;
+}
+.switch-thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 160ms ease;
+}
+.switch input:checked + .switch-track { background: var(--accent); }
+.switch input:checked + .switch-track .switch-thumb { transform: translateX(20px); }
+.switch:has(input:checked) { border-color: var(--accent); }
+.switch:has(input:focus-visible) { outline: 3px solid var(--blue); outline-offset: 2px; }
+
 .tab-btn {
   padding: 14px 14px 11px;
   border: 0;
@@ -186,7 +253,15 @@ main {
 }
 .tag-green { border-color: var(--green); color: var(--green); }
 
-.intro-strip { margin-bottom: 16px; color: var(--ink-soft); max-width: 900px; }
+.workspace-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 24px;
+  margin-bottom: 16px;
+}
+.intro-strip { flex: 1 1 420px; color: var(--ink-soft); max-width: 900px; }
 .intro-strip strong { color: var(--ink); }
 
 .direct-grid {
@@ -366,15 +441,26 @@ select[aria-invalid="true"] { border: 2px solid var(--red); }
 
 /* ---------- Visualization: setup and controls ---------- */
 
-.viz-config { margin-bottom: 14px; }
+.viz-section { margin-top: 22px; }
 
-.viz-config-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) minmax(190px, 0.6fr);
-  gap: 18px;
+.viz-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px 24px;
+  margin-bottom: 14px;
+  border-top-color: var(--accent);
 }
-.viz-actions { display: flex; flex-direction: column; justify-content: flex-end; }
-.viz-actions .btn { width: 100%; }
+.viz-banner .field { margin: 0; min-width: 240px; }
+.viz-banner h2 { margin-bottom: 2px; }
+
+.viz-empty {
+  padding: 14px 16px;
+  border: 1px dashed var(--rule-strong);
+  color: var(--ink-soft);
+  background: var(--sheet);
+}
 
 .controls-bar {
   position: sticky;
@@ -435,7 +521,7 @@ select[aria-invalid="true"] { border: 2px solid var(--red); }
 .stage-head h2 { color: var(--accent-dark); font-size: 1.35rem; letter-spacing: 0; text-transform: none; }
 .phase-desc { color: var(--ink-soft); font-size: 0.88rem; }
 .explanation { font-size: 1.1rem; line-height: 1.45; }
-.load-note { color: var(--ink-soft); margin-top: 8px; }
+.load-note { color: var(--ink-soft); margin: 8px 0; }
 
 .array-head {
   display: flex;
@@ -755,7 +841,7 @@ select[aria-invalid="true"] { border: 2px solid var(--red); }
 .segment-pill.done { border-color: var(--green); color: var(--green); }
 .segment-pill.current { background: var(--mark); border-color: var(--ink); color: var(--ink); font-weight: 700; }
 
-/* ---------- Compare and help ---------- */
+/* ---------- Learn ---------- */
 
 .compare-table { width: 100%; border-collapse: collapse; }
 .compare-table th, .compare-table td { padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--rule); }
@@ -785,15 +871,43 @@ details p { margin-top: 7px; color: var(--ink-soft); font-size: 0.94rem; }
 .security-note ul { margin: 0; padding-left: 20px; }
 .security-note li { margin-bottom: 6px; }
 
-.help-list { margin: 0; padding-left: 20px; }
-.help-list li { margin-bottom: 6px; }
+details p + p { margin-top: 5px; }
+
+/* ---------- Guided tour ---------- */
+
+[data-tour] { scroll-margin-top: 24px; }
+
+.tour { position: fixed; inset: 0; z-index: 100; }
+.tour.no-target { background: rgba(27, 36, 34, 0.55); }
+
+.tour-spotlight {
+  position: fixed;
+  border: 3px solid var(--mark);
+  border-radius: 6px;
+  box-shadow: 0 0 0 9999px rgba(27, 36, 34, 0.55);
+  pointer-events: none;
+  transition: left 200ms ease, top 200ms ease, width 200ms ease, height 200ms ease;
+}
+
+.tour-card {
+  position: fixed;
+  width: min(340px, calc(100vw - 32px));
+  padding: 18px;
+  background: var(--sheet);
+  border-top: 4px solid var(--accent);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+}
+.tour-counter { color: var(--ink-soft); font-size: 0.82rem; }
+.tour-title { margin: 4px 0 6px; font-size: 1.1rem; letter-spacing: 0; text-transform: none; }
+.tour-text { color: var(--ink); }
+.tour-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 
 /* ---------- Responsive ---------- */
 
 @media (max-width: 1100px) {
   .rc4-layout { grid-template-columns: minmax(0, 1fr); }
   .info-grid { grid-template-columns: minmax(0, 1fr); }
-  .viz-config-grid { grid-template-columns: minmax(0, 1fr); gap: 0; }
   .stream-blocks { grid-template-columns: minmax(0, 1fr); }
 }
 
@@ -808,6 +922,8 @@ details p { margin-top: 7px; color: var(--ink-soft); font-size: 0.94rem; }
   h1 { font-size: 1.2rem; }
   .brand-mark { width: 34px; height: 34px; }
   .tab-btn { padding: 10px 8px 8px; font-size: 0.88rem; }
+  .help-btn { margin: 0 0 9px; }
+  .switch { width: 100%; justify-content: space-between; }
   .ctl-group { margin-left: 0; }
   .input-row { flex-wrap: wrap; }
   .input-row select { flex: 1 1 auto; }

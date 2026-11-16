@@ -44,6 +44,28 @@ export function toHex2(value) {
   return value.toString(16).toUpperCase().padStart(2, "0");
 }
 
+const KEY_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+const RANDOM_KEY_BYTES = { a51: 8, rc4: 16 };
+
+// A key from the browser's cryptographic random generator. A5/1 keys are always 8 bytes of
+// hex. RC4 keys are 16 bytes, written as hex or as letters and digits to suit the encoding.
+export function randomKey(algorithm, encoding) {
+  const length = RANDOM_KEY_BYTES[algorithm];
+  if (algorithm === "a51" || encoding === "hex") {
+    const bytes = crypto.getRandomValues(new Uint8Array(length));
+    return Array.from(bytes, toHex2).join("");
+  }
+  // Rejection sampling keeps every character equally likely.
+  const limit = 256 - (256 % KEY_ALPHABET.length);
+  let key = "";
+  while (key.length < length) {
+    for (const byte of crypto.getRandomValues(new Uint8Array(length))) {
+      if (byte < limit && key.length < length) key += KEY_ALPHABET[byte % KEY_ALPHABET.length];
+    }
+  }
+  return key;
+}
+
 async function writeClipboard(text) {
   if (navigator.clipboard && window.isSecureContext) {
     try {

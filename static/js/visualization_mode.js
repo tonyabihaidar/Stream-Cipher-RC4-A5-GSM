@@ -1,27 +1,15 @@
-// Visualization Mode: builds traces, pages steps in from the API and hands each step to
-// the view for the selected algorithm.
+// Step-by-step view: shown under the Encrypt and Decrypt panels when its switch is on.
+// It traces the message and key from the Encrypt panel, pages steps in from the API and
+// hands each step to the view for the selected algorithm.
 
 import { api } from "./api.js";
 import { createA51View } from "./a51_visualization.js";
-import {
-  clear,
-  clearFormError,
-  el,
-  populateExamples,
-  readCipherFields,
-  showFormError,
-  syncCountMode,
-  writeCipherFields,
-} from "./dom.js";
+import { clear, el, readCipherFields } from "./dom.js";
 import { createRc4View } from "./rc4_visualization.js";
 import { StepControls } from "./step_controls.js";
 
 const PAGE_SIZE = { rc4: 64, a51: 128 };
-
-const DEFAULT_INPUTS = {
-  rc4: { key: "Key", key_encoding: "text", plaintext: "Plaintext", input_format: "text" },
-  a51: { key: "1223456789ABCDEF", count_mode: "count", count: "0x134", fn: "", direction: "downlink", plaintext: "HI", input_format: "text" },
-};
+const TOGGLE_STORAGE_KEY = "stream-cipher-lab.show-steps";
 
 // Holds pages of a trace on the client, so revisiting a step needs no further request.
 class TraceStore {
@@ -60,12 +48,31 @@ class TraceStore {
   }
 }
 
+function readSavedToggle() {
+  try {
+    return window.localStorage.getItem(TOGGLE_STORAGE_KEY) === "on";
+  } catch {
+    return false;
+  }
+}
+
+function saveToggle(on) {
+  try {
+    window.localStorage.setItem(TOGGLE_STORAGE_KEY, on ? "on" : "off");
+  } catch {
+    // Storage can be unavailable, for example in a private window. The switch still works.
+  }
+}
+
 export function initVisualizationMode(state) {
-  const form = document.getElementById("viz-form");
+  const encryptForm = document.getElementById("encrypt-form");
+  const toggle = document.getElementById("viz-toggle");
+  const section = document.getElementById("viz-section");
   const workspace = document.getElementById("viz-workspace");
   const stage = document.getElementById("viz-stage");
   const loading = document.getElementById("viz-loading");
-  const exampleSelect = document.getElementById("viz-example");
+  const errorBox = document.getElementById("viz-error");
+  const emptyNote = document.getElementById("viz-empty");
   const segmentField = document.getElementById("viz-segment-field");
   const segmentSelect = document.getElementById("viz-segment");
   const phaseTitle = document.getElementById("stage-phase-title");
@@ -73,57 +80,65 @@ export function initVisualizationMode(state) {
   const explanation = document.getElementById("stage-explanation");
   const strideGroup = document.getElementById("ctl-stride-group");
 
+  let enabled = false;
   let store = null;
   let view = null;
-  const drafts = { rc4: { ...DEFAULT_INPUTS.rc4 }, a51: { ...DEFAULT_INPUTS.a51 } };
+  let buildToken = 0;
 
-  const controls = new StepControls(async (index, context) => {
-    if (!store) return;
-    let step;
-    const slow = window.setTimeout(() => {
-      loading.hidden = false;
-    }, 150);
-    try {
-      step = await store.get(index);
-    } catch (error) {
-      controls.pause();
-      showFormError(form, error, state.algorithm);
-      return;
-    } finally {
-      window.clearTimeout(slow);
-      loading.hidden = true;
-    }
-    if (!context.isCurrent()) return;
-    const phase = controls.currentPhase();
-    phaseTitle.textContent = phase.title;
-    phaseDesc.textContent = phase.description;
-    explanation.textContent = step.explanation;
-    strideGroup.hidden = !(state.algorithm === "a51" && step.phase === "xor");
-    view.render(step, index, context);
-  });
+  const controls = new StepControls(
+    async (index, context) => {
+      if (!store) return;
+      let step;
+      try {
+        step = await store.get(index);
+      } catch (error) {
+        controls.pause();
+        showError(error.message);
+        return;
+      }
+      if (!context.isCurrent()) return;
+      const phase = controls.currentPhase();
+      phaseTitle.textContent = phase.title;
+      phaseDesc.textContent = phase.description;
+      explanation.textContent = step.explanation;
+      strideGroup.hidden = !(state.algorithm === "a51" && step.phase === "xor");
+      view.render(step, index, context);
+    },
+    () => enabled && state.view === "workspace",
+  );
 
-  form.elements.count_mode.addEventListener("change", () => syncCountMode(form));
-
-  const readRequest = (algorithm) => ({
-    ...readCipherFields(form, algorithm),
-    plaintext: form.elements.plaintext.value,
-    input_format: form.elements.input_format.value,
-  });
-
-  function writeInputs(algorithm, values) {
-    writeCipherFields(form, algorithm, values);
-    form.elements.plaintext.value = values.plaintext ?? "";
-    form.elements.input_format.value = values.input_format ?? "text";
-    form.elements.plaintext.classList.toggle("mono", form.elements.input_format.value !== "text");
+  function showError(message) {
+    errorBox.textContent = message;
+    errorBox.hidden = false;
   }
 
+  function resetTrace() {
+    buildToken += 1;
+    controls.pause();
+    controls.total = 0;
+    store = null;
+    if (view) view.destroy();
+    view = null;
+    clear(stage);
+    workspace.hidden = true;
+    segmentField.hidden = true;
+    errorBox.hidden = true;
+    emptyNote.hidden = true;
+    loading.hidden = true;
+  }
+
+  const readRequest = () => ({
+    ...readCipherFields(encryptForm, state.algorithm),
+    plaintext: encryptForm.elements.plaintext.value,
+    input_format: encryptForm.elements.input_format.value,
+  });
+
   function fillSegments(summary) {
+    clear(segmentSelect);
     if (state.algorithm !== "a51" || summary.segment_count < 2) {
       segmentField.hidden = true;
-      clear(segmentSelect);
       return;
     }
-    clear(segmentSelect);
     for (const segment of summary.segments) {
       segmentSelect.append(
         el("option", { value: String(segment.index), text: `Segment ${segment.index + 1} · COUNT ${segment.count_hex}` }),
@@ -134,80 +149,64 @@ export function initVisualizationMode(state) {
   }
 
   async function build(options = {}) {
-    clearFormError(form);
+    if (!enabled) return;
+    const keepSegments = options.segment !== undefined;
+    const previousSegmentField = segmentField.hidden;
+    resetTrace();
+    if (keepSegments) segmentField.hidden = previousSegmentField;
     const algorithm = state.algorithm;
-    const request = readRequest(algorithm);
-    if (options.segment !== undefined) request.segment = options.segment;
-    const button = form.querySelector('button[type="submit"]');
-    button.disabled = true;
-    button.classList.add("is-busy");
+    const request = readRequest();
+    if (request.plaintext === "" || request.key.trim() === "") {
+      emptyNote.hidden = false;
+      return;
+    }
+    if (keepSegments) request.segment = options.segment;
+    const token = buildToken;
+    loading.hidden = false;
     try {
       const opened = await TraceStore.open(request, PAGE_SIZE[algorithm]);
-      if (algorithm !== state.algorithm) return;
+      if (token !== buildToken) return;
       store = opened;
-      if (view) view.destroy();
-      clear(stage);
       view = algorithm === "rc4" ? createRc4View(stage, store.summary) : createA51View(stage, store.summary);
       fillSegments(store.summary);
       workspace.hidden = false;
       await controls.configure(store.total, store.summary.phases, options.index ?? 0);
     } catch (error) {
-      showFormError(form, error, algorithm);
+      if (token === buildToken) showError(error.message);
     } finally {
-      button.disabled = false;
-      button.classList.remove("is-busy");
+      if (token === buildToken) loading.hidden = true;
     }
   }
 
-  form.addEventListener("submit", (event) => {
-    event.preventDefault();
-    controls.pause();
+  function setEnabled(on, options = {}) {
+    enabled = on;
+    toggle.checked = on;
+    section.hidden = !on;
+    saveToggle(on);
+    if (!on) {
+      resetTrace();
+      return;
+    }
     build();
-  });
+    if (options.scroll) section.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  toggle.addEventListener("change", () => setEnabled(toggle.checked, { scroll: true }));
 
   segmentSelect.addEventListener("change", () => {
     build({ segment: Number(segmentSelect.value), index: controls.index });
   });
 
-  exampleSelect.addEventListener("change", () => {
-    const example = state.examples.find((item) => item.id === exampleSelect.value);
-    if (!example) return;
-    writeInputs(example.algorithm, example.fields);
-    controls.pause();
-    build();
-  });
-
-  form.elements.input_format.addEventListener("change", () => {
-    form.elements.plaintext.classList.toggle("mono", form.elements.input_format.value !== "text");
-  });
-
   state.subscribe((change) => {
-    if (change === "algorithm") {
-      const other = state.algorithm === "rc4" ? "a51" : "rc4";
-      drafts[other] = readRequest(other);
-      // The previous trace belongs to the other algorithm, so it must not stay on screen.
-      controls.pause();
-      store = null;
-      if (view) view.destroy();
-      view = null;
-      clear(stage);
-      controls.total = 0;
-      workspace.hidden = true;
-      clearFormError(form);
-      writeInputs(state.algorithm, drafts[state.algorithm]);
-      populateExamples(exampleSelect, state.examples, state.algorithm);
-      segmentField.hidden = true;
-      if (state.view === "visualize") build();
+    if (change === "algorithm" || change === "inputs") {
+      // A trace for other inputs or the other algorithm must not stay on screen.
+      resetTrace();
+      build();
     }
-    if (change === "view") {
-      if (state.view !== "visualize") controls.pause();
-      else if (!store) build();
-    }
+    if (change === "view" && state.view !== "workspace") controls.pause();
   });
 
-  writeInputs("rc4", DEFAULT_INPUTS.rc4);
-  writeCipherFields(form, "a51", DEFAULT_INPUTS.a51);
-  populateExamples(exampleSelect, state.examples, state.algorithm);
+  setEnabled(readSavedToggle());
   initSimplifiedDemo();
 }
 
