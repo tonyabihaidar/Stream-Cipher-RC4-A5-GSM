@@ -3,7 +3,7 @@
     <span class="eyebrow">YOUR PERSONAL LAB NOTEBOOK</span>
     <h2>Keep your experiments.</h2>
     <p>Sign in to save your RC4 and A5/1 encryptions and pick up where you left off.</p>
-    <div class="auth-note"><strong>Your key stays with you.</strong><p>History stores ciphertext, dates, and cipher settings. Keep your secret keys separately to decrypt saved messages later.</p></div>
+    <div class="auth-note"><strong>Your complete experiment, saved.</strong><p>Private history includes your key, plaintext, ciphertext, keystream, and cipher settings. Opening a saved experiment restores its key. Anyone with access to your account can view these details.</p></div>
   </div>
   <form id="auth-form" class="panel auth-panel">
     <header class="panel-head"><h2 id="auth-heading">Welcome back</h2><span class="tag">ACCOUNT</span></header>
@@ -12,14 +12,23 @@
       <button type="button" class="seg-btn" id="auth-create-mode" aria-pressed="false">Create account</button>
     </div>
     <div class="field"><label for="auth-email">Email address</label><input id="auth-email" type="email" autocomplete="username" required maxlength="254" placeholder="you@example.com"></div>
-    <div class="field"><label for="auth-password">Password</label><input id="auth-password" type="password" autocomplete="current-password" required minlength="6" maxlength="128" placeholder="Your password"></div>
+    <div class="field"><label for="auth-password">Password</label><input id="auth-password" type="password" autocomplete="current-password" required minlength="1" maxlength="4096" aria-describedby="password-help" placeholder="Your password"></div>
+    <p id="password-help" class="hint" hidden>Use at least 8 characters, including uppercase and lowercase letters, a number, and a special character (for example !, @, or #).</p>
     <p id="auth-message" class="hint" role="status" aria-live="polite">Connecting to your account…</p>
     <div class="button-row"><button id="auth-submit" type="submit" class="btn btn-primary" disabled>Sign in</button><button id="auth-reset" type="button" class="btn" disabled>Forgot password?</button></div>
     <button type="button" class="text-button" data-set-view="workspace">Continue without an account →</button>
   </form>
+  <div id="auth-verification" class="panel auth-panel" hidden>
+    <header class="panel-head"><h2>Verify your email</h2><span class="tag">ONE MORE STEP</span></header>
+    <p>Open the verification link in your email to unlock your private history. You can still use the lab while you wait.</p>
+    <p id="verification-message" class="hint" role="status" aria-live="polite"></p>
+    <div class="button-row"><button id="verification-check" class="btn btn-primary" type="button">I’ve verified my email</button><button id="verification-resend" class="btn" type="button">Resend verification email</button></div>
+    <button type="button" class="text-button" data-set-view="workspace">Continue to the lab →</button>
+  </div>
+  <div id="auth-signed-in" class="panel auth-panel" hidden><h2>You’re signed in</h2><p>Your email is verified and private history is ready.</p><button type="button" class="btn btn-primary" data-set-view="history">Open history</button></div>
 </section>
 <section class="view history-view" data-view-panel="history" hidden aria-labelledby="history-heading">
-  <header class="history-header"><div><span class="eyebrow">YOUR PERSONAL LAB NOTEBOOK</span><h2 id="history-heading">Encryption history</h2><p class="muted">Your saved ciphertexts, newest first. Open a record and enter its key to decrypt it.</p></div><button class="btn" id="history-refresh" type="button">Refresh</button></header>
+  <header class="history-header"><div><span class="eyebrow">YOUR PERSONAL LAB NOTEBOOK</span><h2 id="history-heading">Encryption history</h2><p class="muted">Complete experiments, newest first. New records include the key and restore it automatically when opened.</p></div><button class="btn" id="history-refresh" type="button">Refresh</button></header>
   <div id="history-guest" class="panel empty-state"><h3>A place for your experiments</h3><p>Sign in to save encryptions and access them on another device.</p><button type="button" class="btn btn-primary" data-set-view="login">Sign in or create an account</button></div>
   <p id="history-status" role="status" aria-live="polite" class="hint"></p>
   <div id="history-list" class="history-list"></div>

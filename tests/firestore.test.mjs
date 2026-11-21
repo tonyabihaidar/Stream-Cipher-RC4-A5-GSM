@@ -9,7 +9,7 @@ const entry = (record=rc4) => ({title:'Test encryption', createdAt:serverTimesta
 const ref = (db, id) => doc(db, 'users', 'alice', 'encryptions', id);
 before(async () => {
   env = await initializeTestEnvironment({projectId:'demo-stream-cipher', firestore:{host:'127.0.0.1', port:8085, rules:await readFile('firestore.rules','utf8')}});
-  alice=env.authenticatedContext('alice').firestore(); bob=env.authenticatedContext('bob').firestore(); guest=env.unauthenticatedContext().firestore();
+  alice=env.authenticatedContext('alice', {email_verified:true}).firestore(); bob=env.authenticatedContext('bob', {email_verified:true}).firestore(); guest=env.unauthenticatedContext().firestore();
 });
 after(async () => { await env?.cleanup(); });
 test('owner can save and read a record', async () => {await assertSucceeds(setDoc(ref(alice,'own'),entry())); await assertSucceeds(getDoc(ref(alice,'own')));});
@@ -24,7 +24,7 @@ test('another account cannot read, list, create, modify, or delete owner history
 test('signed-out requests cannot access history', async () => {
   await assertFails(getDoc(ref(guest,'own'))); await assertFails(setDoc(ref(guest,'guest'),entry()));
 });
-test('keys, plaintext, and extra fields are rejected by rules', async () => {
+test('unstructured sensitive fields and extra fields are rejected by rules', async () => {
   for (const field of ['key','plaintext','keystream','ownerId']) {
     await assertFails(setDoc(ref(alice,`extra-${field}`),{...entry(),[field]:'sensitive'}));
     await assertFails(setDoc(ref(alice,`nested-${field}`),entry({...rc4,[field]:'sensitive'})));
@@ -58,3 +58,26 @@ test('retrying a save transaction reuses the existing record', async () => {
 });
 test('owner can delete their own saved encryption', async () => {await setDoc(ref(alice,'delete'),entry()); await assertSucceeds(deleteDoc(ref(alice,'delete')));});
 test('unrelated collections are closed', async () => {await assertFails(setDoc(doc(alice,'public','anything'),{message:'hello'}));});
+
+const details = {key:'Key', plaintext:'abc', input_format:'text', keystream:'123456'};
+test('full details round trip for verified owner and remain private and immutable', async () => {
+  const target = ref(alice, 'full-details');
+  await assertSucceeds(setDoc(target, {...entry(), details}));
+  assert.deepEqual((await getDoc(target)).data().details, details);
+  await assertFails(getDoc(ref(bob, 'full-details')));
+  await assertSucceeds(updateDoc(target, {title:'Complete example'}));
+  await assertFails(updateDoc(target, {details:{...details, key:'changed'}}));
+});
+test('unverified owner cannot read, list, save, modify, or delete history', async () => {
+  const db = env.authenticatedContext('alice', {email_verified:false}).firestore();
+  await assertFails(getDoc(ref(db,'own')));
+  await assertFails(getDocs(collection(db,'users','alice','encryptions')));
+  await assertFails(setDoc(ref(db,'unverified'),entry()));
+  await assertFails(updateDoc(ref(db,'own'),{title:'Changed'}));
+  await assertFails(deleteDoc(ref(db,'own')));
+});
+test('malformed, oversized or unexpected details are rejected', async () => {
+  for (const change of [{key:''}, {key:'a'.repeat(1025)}, {plaintext:23}, {plaintext:'a'.repeat(131073)}, {input_format:'invalid'}, {keystream:'ABC'}, {keystream:'AB'}, {password:'account-password'}]) {
+    await assertFails(setDoc(ref(alice,'bad-details'),{...entry(),details:{...details,...change}}));
+  }
+});

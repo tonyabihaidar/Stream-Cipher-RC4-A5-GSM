@@ -1,4 +1,4 @@
-// Explicit allowlist: never copy a request, plaintext, key, or keystream into history.
+// Ciphertext metadata remains compatible with legacy exports.
 export function historyRecord(source) {
   if (!source || source.record_type !== 'eece455.stream-cipher.ciphertext' ||
       !['rc4', 'a51'].includes(source.algorithm) || source.encoding !== 'hex' ||
@@ -22,4 +22,28 @@ export function historyRecord(source) {
     fields.push('direction', 'count_mode', 'start_count', 'start_fn', 'segment_count', 'count_advance');
   }
   return Object.fromEntries(fields.map((field) => [field, source[field]]));
+}
+
+// Full notebook details are separate so older ciphertext-only records still work.
+export function historyDetails(source, record) {
+  if (source == null) return null;
+  if (typeof source.key !== 'string' || !source.key.length || source.key.length > 1024 ||
+      typeof source.plaintext !== 'string' || !source.plaintext.length || source.plaintext.length > 131072 ||
+      !['text', 'hex', 'binary'].includes(source.input_format) ||
+      typeof source.keystream !== 'string' || !/^(?:[0-9A-F]{2})+$/.test(source.keystream) ||
+      source.keystream.length !== record.ciphertext.length) throw new Error('Invalid saved encryption details.');
+  if ((record.algorithm === 'a51' && !/^[0-9A-F]{16}$/.test(source.key)) ||
+      (record.algorithm === 'rc4' && record.key_encoding === 'hex' && !/^(?:[0-9A-F]{2}){1,256}$/.test(source.key))) {
+    throw new Error('Invalid saved encryption key.');
+  }
+  return Object.fromEntries(['key', 'plaintext', 'input_format', 'keystream'].map(field => [field, source[field]]));
+}
+
+export function encryptionDetails(request, result) {
+  const format = request.input_format || 'text';
+  return historyDetails({
+    key: result.algorithm === 'a51' || result.record.key_encoding === 'hex' ? request.key.replace(/\s/g, '').toUpperCase() : request.key,
+    plaintext: format === 'text' ? request.plaintext : result.plaintext[format === 'hex' ? 'hex' : 'binary'],
+    input_format: format, keystream: result.keystream.hex,
+  }, result.record);
 }

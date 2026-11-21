@@ -4,8 +4,9 @@
   "type": "module",
   "scripts": {
     "build": "esbuild frontend/firebase.js --bundle --format=esm --minify --outfile=static/js/firebase.bundle.js",
-    "test": "node --test tests/history.test.mjs",
-    "test:rules": "firebase emulators:exec --only firestore --project demo-stream-cipher 'node --test tests/firestore.test.mjs'"
+    "test": "node --test tests/history.test.mjs tests/password.test.mjs",
+    "test:rules": "firebase emulators:exec --only firestore --project demo-stream-cipher 'node --test tests/firestore.test.mjs'",
+    "test:accounts": "firebase emulators:exec --only auth,firestore --project demo-stream-cipher 'node --test tests/auth.test.mjs tests/firestore.test.mjs'"
   },
   "dependencies": {
     "firebase": "13.4.0"

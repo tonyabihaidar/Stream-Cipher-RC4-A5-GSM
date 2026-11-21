@@ -2,7 +2,7 @@
 
 import { api } from "./api.js";
 import { currentUser, saveEncryption, accountError, onAccountChange } from './account.js';
-import { historyRecord } from './history_record.js';
+import { historyRecord, historyDetails, encryptionDetails } from './history_record.js';
 import {
   clear,
   clearFormError,
@@ -221,9 +221,9 @@ export function initDirectMode(state) {
     if (button) button.disabled = true;
     if (status) status.textContent = 'Saving to your history…';
     try {
-      await saveEncryption(entry.result.record, entry.id, uid);
+      await saveEncryption(entry.result.record, entry.id, uid, encryptionDetails(entry.request, entry.result));
       entry.saved = true;
-      if (status) status.textContent = 'Saved to your history. Your key and plaintext were not stored.';
+      if (status) status.textContent = 'Saved to your private history, including the key, plaintext, ciphertext, and keystream.';
       if (button) button.textContent = 'Saved to History';
     } catch (error) {
       if (status) status.textContent = `Encryption succeeded, but was not saved. ${accountError(error)}`;
@@ -291,7 +291,7 @@ export function initDirectMode(state) {
 
   function exportRecord() {
     const { result } = lastEncrypt;
-    saveJson(`${result.algorithm}-ciphertext-record.json`, result.record);
+    saveJson(`${result.algorithm}-encryption-record.json`, {...result.record, details: encryptionDetails(lastEncrypt.request, result)});
   }
 
   encryptForm.querySelectorAll("[data-random-key]").forEach((button) => {
@@ -382,6 +382,7 @@ export function initDirectMode(state) {
     clear(decryptResult);
     try {
       const record = JSON.parse(await file.text());
+      const details = record.details == null ? null : historyDetails(record.details, historyRecord(record));
       if (record.record_type !== RECORD_TYPE || typeof record.ciphertext !== "string") throw new Error("bad record");
       if (record.algorithm === "rc4" || record.algorithm === "a51") state.setAlgorithm(record.algorithm);
       else throw new Error("bad record");
@@ -398,6 +399,7 @@ export function initDirectMode(state) {
         decryptForm.elements.key_encoding.value = record.key_encoding === "hex" ? "hex" : "text";
       }
       const keyField = record.algorithm === "rc4" ? decryptForm.elements.rc4_key : decryptForm.elements.a51_key;
+      keyField.value = details?.key || '';
       keyField.focus();
     } catch {
       showFormError(decryptForm, { message: "That file is not a valid ciphertext record.", field: null }, state.algorithm);
@@ -407,6 +409,7 @@ export function initDirectMode(state) {
   window.addEventListener('history:open', (event) => {
     try {
       const record = historyRecord(event.detail);
+      const details = historyDetails(event.detail.details, record);
       state.setAlgorithm(record.algorithm);
       state.setView('workspace');
       decryptForm.reset();
@@ -415,7 +418,7 @@ export function initDirectMode(state) {
       decryptForm.elements.ciphertext_encoding.value = record.encoding;
       decryptForm.elements.bit_length.value = String(record.bit_length);
       writeCipherFields(decryptForm, record.algorithm, {
-        key: '', key_encoding: record.key_encoding || 'hex', direction: record.direction,
+        key: details?.key || '', key_encoding: record.key_encoding || 'hex', direction: record.direction,
         count_mode: record.count_mode, count: String(record.start_count ?? ''), fn: String(record.start_fn ?? ''),
       });
       syncCountMode(decryptForm);

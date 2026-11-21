@@ -1,7 +1,7 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    function owner(uid) { return request.auth != null && request.auth.uid == uid; }
+    function owner(uid) { return request.auth != null && request.auth.uid == uid && request.auth.token.email_verified == true; }
     function validRecord(r) {
       let common = ['record_type', 'version', 'algorithm', 'encoding', 'ciphertext', 'bit_length'];
       return r is map && r.keys().hasAll(common)
@@ -24,11 +24,23 @@ service cloud.firestore {
           && r.segment_count is int && r.segment_count > 0
           && (r.segment_count - 1) * 114 < r.bit_length && r.segment_count * 114 >= r.bit_length));
     }
+    function validDetails(d, r) {
+      return d is map && d.keys().hasAll(['key', 'plaintext', 'input_format', 'keystream'])
+        && d.keys().hasOnly(['key', 'plaintext', 'input_format', 'keystream'])
+        && d.key is string && d.key.size() > 0 && d.key.size() <= 1024
+        && (r.algorithm != 'a51' || d.key.matches('[0-9A-F]{16}'))
+        && (r.algorithm != 'rc4' || r.key_encoding != 'hex' || d.key.matches('([0-9A-F]{2}){1,256}'))
+        && d.plaintext is string && d.plaintext.size() > 0 && d.plaintext.size() <= 131072
+        && d.input_format in ['text', 'hex', 'binary']
+        && d.keystream is string && d.keystream.matches('([0-9A-F]{2})+')
+        && d.keystream.size() == r.ciphertext.size();
+    }
     function validEntry(d) {
-      return d.keys().hasOnly(['title', 'createdAt', 'record'])
+      return d.keys().hasOnly(['title', 'createdAt', 'record', 'details'])
         && d.keys().hasAll(['title', 'createdAt', 'record'])
         && d.title is string && d.title.size() > 0 && d.title.size() <= 100
-        && d.createdAt is timestamp && validRecord(d.record);
+        && d.createdAt is timestamp && validRecord(d.record)
+        && (!('details' in d) || validDetails(d.details, d.record));
     }
     match /users/{uid}/encryptions/{id} {
       allow read, delete: if owner(uid);

@@ -977,3 +977,7 @@ body[data-view="login"] #help-tour, body[data-view="history"] #help-tour { displ
   .history-header { align-items: flex-start; }
   .account-bar { flex-wrap: wrap; }
 }
+
+.history-details { margin-top: 1rem; }
+.history-details summary { cursor: pointer; font-weight: 600; }
+.history-details pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 18rem; overflow: auto; }

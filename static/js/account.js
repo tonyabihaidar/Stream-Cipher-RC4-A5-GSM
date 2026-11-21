@@ -1,5 +1,6 @@
 import { el } from './dom.js';
-import { historyRecord } from './history_record.js';
+import { historyRecord, historyDetails } from './history_record.js';
+import { validPassword, PASSWORD_HELP } from './password_policy.js';
 
 let sdk, auth, db, user = null, startup;
 const observers = new Set();
@@ -11,8 +12,8 @@ export function accountError(error) {
     'auth/invalid-credential': 'The email or password is incorrect.',
     'auth/invalid-email': 'Enter a valid email address.',
     'auth/email-already-in-use': 'An account with this email already exists. Try signing in.',
-    'auth/weak-password': 'Use a stronger password with at least 6 characters.',
-    'auth/password-does-not-meet-requirements': 'Use a stronger password with upper and lowercase letters, a number, and a symbol.',
+    'auth/weak-password': PASSWORD_HELP,
+    'auth/password-does-not-meet-requirements': PASSWORD_HELP,
     'auth/too-many-requests': 'Too many attempts. Please wait a moment and try again.',
     'auth/network-request-failed': 'Unable to connect. Check your connection and try again.',
     'auth/operation-not-allowed': 'Account sign-in is not enabled yet. Please try again later.',
@@ -44,13 +45,15 @@ async function connect() {
 
 function requireOwner(uid) {
   if (!uid || user?.uid !== uid) throw new Error('Sign in to save this encryption to your history.');
+  if (!user.emailVerified) throw new Error('Verify your email from the Account page before using history.');
   return sdk.collection(db, 'users', uid, 'encryptions');
 }
 
-export async function saveEncryption(source, id, uid) {
+export async function saveEncryption(source, id, uid, sourceDetails) {
   await startup;
   const collection = requireOwner(uid);
   const record = historyRecord(source);
+  const details = historyDetails(sourceDetails, record);
   // The result's ID is reused for retry clicks. A second create cannot duplicate history.
   const ref = sdk.doc(collection, id);
   await sdk.runTransaction(db, async (transaction) => {
@@ -58,7 +61,7 @@ export async function saveEncryption(source, id, uid) {
     if (existing.exists()) return;
     transaction.set(ref, {
       title: `${record.algorithm === 'rc4' ? 'RC4' : 'A5/1'} encryption`,
-      createdAt: sdk.serverTimestamp(), record,
+      createdAt: sdk.serverTimestamp(), record, ...(details ? {details} : {}),
     });
   });
 }
@@ -76,7 +79,13 @@ export function initAccount(state) {
   const list = document.getElementById('history-list');
   const more = document.getElementById('history-more');
   const refresh = document.getElementById('history-refresh');
+  const verification = document.getElementById('auth-verification');
+  const verifyMessage = document.getElementById('verification-message');
+  const resend = document.getElementById('verification-resend');
+  const check = document.getElementById('verification-check');
+  const passwordHelp = document.getElementById('password-help');
   let creating = false, cursor = null, generation = 0, loading = false;
+  let lastVerificationSent = 0;
 
   function mode(value) {
     creating = value;
@@ -85,10 +94,49 @@ export function initAccount(state) {
     document.getElementById('auth-heading').textContent = value ? 'Start your notebook' : 'Welcome back';
     submit.textContent = value ? 'Create account' : 'Sign in';
     password.autocomplete = value ? 'new-password' : 'current-password';
+    password.minLength = value ? 8 : 1;
+    passwordHelp.hidden = !value;
+    password.setCustomValidity('');
     reset.hidden = value;
   }
   signIn.addEventListener('click', () => mode(false));
   create.addEventListener('click', () => mode(true));
+  password.addEventListener('input', () => password.setCustomValidity(''));
+
+  async function sendVerification() {
+    const recipient = user;
+    if (!recipient || recipient.emailVerified) return;
+    if (Date.now() - lastVerificationSent < 60000) {
+      verifyMessage.textContent = 'Please wait one minute before requesting another email.';
+      return;
+    }
+    await sdk.sendEmailVerification(recipient);
+    if (user?.uid !== recipient.uid) return;
+    lastVerificationSent = Date.now();
+    verifyMessage.textContent = `Verification email sent to ${recipient.email}. Open the link, then select “I’ve verified my email”. Check spam if needed.`;
+  }
+  resend.addEventListener('click', async () => {
+    resend.disabled = true;
+    try { await sendVerification(); }
+    catch (error) { verifyMessage.textContent = accountError(error); }
+    finally { resend.disabled = false; }
+  });
+  check.addEventListener('click', async () => {
+    check.disabled = true;
+    try {
+      const recipient = user;
+      if (!recipient) return;
+      await sdk.reload(recipient);
+      await sdk.getIdToken(recipient, true);
+      if (user?.uid !== recipient.uid) return;
+      user = recipient;
+      if (!recipient.emailVerified) { verifyMessage.textContent = 'Your email is not verified yet. Open the link in your email and try again.'; return; }
+      observers.forEach(callback => callback(user));
+      message.textContent = 'Email verified. You can now save and open your history.';
+      state.setView('history');
+    } catch (error) { verifyMessage.textContent = accountError(error); }
+    finally { check.disabled = false; }
+  });
 
   async function authAction(action) {
     submit.disabled = reset.disabled = true;
@@ -99,11 +147,21 @@ export function initAccount(state) {
   }
   form.addEventListener('submit', (event) => {
     event.preventDefault();
+    password.setCustomValidity(creating && !validPassword(password.value) ? PASSWORD_HELP : '');
     if (!form.reportValidity()) return;
     authAction(async () => {
       const method = creating ? sdk.createUserWithEmailAndPassword : sdk.signInWithEmailAndPassword;
-      await method(auth, email.value.trim(), password.value);
+      const credential = await method(auth, email.value.trim(), password.value);
       password.value = '';
+      if (!credential.user.emailVerified) {
+        message.textContent = 'Verify your email to unlock your saved encryptions.';
+        state.setView('login');
+        if (creating) {
+          try { await sendVerification(); }
+          catch (error) { verifyMessage.textContent = `Account created, but the email could not be sent. ${accountError(error)} Use Resend verification email to try again.`; }
+        }
+        return;
+      }
       message.textContent = 'You’re signed in. New encryptions will be saved to your history.';
       state.setView('workspace');
     });
@@ -131,6 +189,7 @@ export function initAccount(state) {
   function historyCard(snapshot, uid) {
     const data = snapshot.data();
     const record = historyRecord(data.record);
+    const details = historyDetails(data.details, record);
     const title = el('input', { type: 'text', value: data.title, maxlength: '100', required: true, 'aria-label': 'Encryption title' });
     const note = el('p', { className: 'hint', role: 'status' });
     const card = el('article', { className: 'panel history-card' });
@@ -148,12 +207,12 @@ export function initAccount(state) {
     });
     const open = el('button', { type: 'button', className: 'btn btn-primary', text: 'Open in Decryption', onclick: () => {
       if (user?.uid !== uid) return;
-      window.dispatchEvent(new CustomEvent('history:open', { detail: record }));
+      window.dispatchEvent(new CustomEvent('history:open', { detail: {...record, ...(details ? {details} : {})} }));
     } });
     const download = el('button', { type: 'button', className: 'btn', text: 'Export Record', onclick: () => {
       if (user?.uid !== uid) return;
-      const url = URL.createObjectURL(new Blob([JSON.stringify(record, null, 2)], {type: 'application/json'}));
-      const link = el('a', { href: url, download: `${record.algorithm}-ciphertext-record.json` });
+      const url = URL.createObjectURL(new Blob([JSON.stringify({...record, ...(details ? {details} : {})}, null, 2)], {type: 'application/json'}));
+      const link = el('a', { href: url, download: `${record.algorithm}-encryption-record.json` });
       document.body.append(link); link.click(); link.remove(); URL.revokeObjectURL(url);
     } });
     const remove = el('button', { type: 'button', className: 'btn danger-button', text: 'Delete', onclick: async () => {
@@ -171,11 +230,19 @@ export function initAccount(state) {
       el('div', {className: 'output-value mono history-ciphertext', text: record.ciphertext.length > 160 ? `${record.ciphertext.slice(0, 160)}…` : record.ciphertext}),
       actions, note,
     );
+    if (details) {
+      const full = el('details', {className: 'history-details'}, el('summary', {text: 'View key and full encryption details'}));
+      for (const [label, value] of [['Secret key', details.key], [`Plaintext (${details.input_format})`, details.plaintext], ['Ciphertext (hex)', record.ciphertext], ['Keystream (hex)', details.keystream], ['Cipher settings', JSON.stringify(record, null, 2)]]) {
+        full.append(el('p', {className: 'output-label', text: label}), el('pre', {className: 'output-value mono history-ciphertext', text: value}));
+      }
+      card.append(full);
+    } else card.append(el('p', {className: 'hint', text: 'Older record: its key and plaintext were not saved. Enter the original key after opening.'}));
     return card;
   }
 
   async function loadHistory(append = false) {
     if (!user || loading) return;
+    if (!user.emailVerified) { status.textContent = 'Verify your email on the Account page to unlock your history.'; return; }
     if (!append) clearHistory();
     const uid = user.uid, ticket = generation;
     loading = true; refresh.disabled = true; more.disabled = true;
@@ -205,10 +272,16 @@ export function initAccount(state) {
     clearHistory();
     password.value = '';
     document.getElementById('account-name').textContent = next?.email || 'Guest session';
-    document.getElementById('account-login').hidden = Boolean(next);
+    document.getElementById('account-login').hidden = Boolean(next?.emailVerified);
+    document.getElementById('account-login').textContent = next ? 'Verify email' : 'Sign in';
     document.getElementById('account-logout').hidden = !next;
     document.getElementById('history-guest').hidden = Boolean(next);
     refresh.hidden = !next;
+    form.hidden = Boolean(next);
+    verification.hidden = !next || next.emailVerified;
+    document.getElementById('auth-signed-in').hidden = !next?.emailVerified;
+    lastVerificationSent = 0;
+    verifyMessage.textContent = next && !next.emailVerified ? `Verify ${next.email} to save and access encryption history.` : '';
     if (state.view === 'history') loadHistory();
   });
   refresh.hidden = true;

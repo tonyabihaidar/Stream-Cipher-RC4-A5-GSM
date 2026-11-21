@@ -304,7 +304,7 @@ All POST endpoints take and return JSON. Errors look like `{"error": {"code", "m
 
 Status codes are 400 for invalid input, 404, 405, 413 for oversized requests and 415 for a non-JSON content type. Unexpected errors return a generic 500 message with no internal details.
 
-**Privacy:** signed-in encryptions save only the exported ciphertext record, a title and a server timestamp to the user's Firestore history. Keys, plaintext and keystreams are never saved. Guest encryptions are not saved automatically. Keys and messages are not logged, API responses use `Cache-Control: no-store`, and keys are not repeated in responses. Firestore rules enforce account ownership and reject unexpected fields, including nested keys and plaintext.
+**Privacy:** verified accounts save complete experiments to private Firestore history: key, plaintext, ciphertext, keystream, cipher settings, title, and server timestamp. Anyone who can access the account can read and decrypt its saved experiments. JSON exports include the same sensitive details. Guest encryptions are not saved automatically. Cipher API requests are not logged and responses use `Cache-Control: no-store`. Firestore rules require a verified email and matching account owner; unexpected fields and changes to original experiment data are rejected.
 
 ## 14. Security limitations
 
@@ -324,11 +324,11 @@ Status codes are 400 for invalid input, 404, 405, 413 for oversized requests and
 
 ## 16. Accounts and saved encryptions
 
-Open `/login` to create an email/password account or sign in. The session survives page reloads in the same tab and ends when that browser session closes or you sign out. Password reset is available from the sign-in form. Guests can keep using the entire cipher lab.
+Open `/login` to create an email/password account or sign in. The session survives page reloads in the same tab and ends when that browser session closes or you sign out. New passwords require at least eight characters, uppercase and lowercase letters, a digit, and a Firebase-supported special character. Firebase enforces this policy for new passwords; existing users can still sign in without a forced password change. Password reset is available from the sign-in form. New accounts receive a Firebase email-verification link automatically; existing unverified users can send one from the Account page. Open the link and select **I’ve verified my email** to refresh the session and unlock history. Resends have a one-minute UI cooldown. History access requires email verification both in the app and in Firestore rules. Guests can keep using the entire cipher lab.
 
-While signed in, each successful encryption is saved automatically. The result shows whether saving succeeded and offers a retry when it fails. A guest result can also be saved after signing in by returning to the workspace and selecting **Save to History**. Saving reuses one record ID per result so retries do not create duplicates.
+While signed in with a verified email, each successful encryption is saved automatically. The result shows whether saving succeeded and offers a retry when it fails. A guest result can also be saved after signing in by returning to the workspace and selecting **Save to History**. Saving reuses one record ID per result so retries do not create duplicates.
 
-**History** shows the newest 25 records and offers **Load older encryptions**. You can rename, export, permanently delete, or open a record in the Decrypt panel. You must supply its original key; history never stores keys, plaintext, or keystreams. Signing out clears the forms, visible results, and history. Cipher APIs remain public and stateless; Firestore rules protect all saved data directly.
+**History** shows the newest 25 records and offers **Load older encryptions**. You can rename, export, permanently delete, or open a record in the Decrypt panel. New records include the key, plaintext, input format and keystream in a validated `details` map alongside ciphertext metadata. Expand **View key and full encryption details** to inspect them. Opening a new record restores its key automatically. Older ciphertext-only records remain readable, but their missing keys cannot be recovered and must be entered manually. Signing out clears the forms, visible results, and history. Cipher APIs remain public and stateless; Firestore rules protect all saved data directly.
 
 ### Firebase project
 
@@ -336,14 +336,14 @@ This checkout uses `eece-455-stream-cipher`. Its public web configuration is in 
 
 **Setup status (2026-11-21):** the Firebase project, Web app and Email/Password provider are configured. The default Cloud Firestore Standard database is in Frankfurt (`europe-west3`), on the Spark plan, with the tested `firestore.rules` published. Sign-in and private cloud history are connected.
 
-**Live verification (2026-11-21):** a disposable account successfully signed in, automatically saved RC4 and A5/1 examples, retained history across reload, renamed a record, and reopened/decrypted both records. The A5/1 record preserved all 114 meaningful bits and its frame parameters. Sign-out cleared keys, results and displayed history. Inspection confirmed that stored records contain only ciphertext and permitted metadata. Both sample records and the temporary account were deleted afterward; the deleted account could no longer sign in. The user's own account and records were untouched. See `artifacts/history-verified.png` for the test history view.
+**Initial ciphertext-only live verification (2026-11-21, before full-detail history):** a disposable account successfully signed in, automatically saved RC4 and A5/1 examples, retained history across reload, renamed a record, and reopened/decrypted both records. The A5/1 record preserved all 114 meaningful bits and its frame parameters. Sign-out cleared keys, results and displayed history. Inspection confirmed that stored records contain only ciphertext and permitted metadata. Both sample records and the temporary account were deleted afterward; the deleted account could no longer sign in. The user's own account and records were untouched. See `artifacts/history-verified.png` for the test history view.
 
 For another deployment:
 
 1. Register a Firebase Web app and place its public config in `static/firebase-config.json`.
-2. Enable **Authentication → Sign-in method → Email/Password**.
+2. Enable **Authentication → Sign-in method → Email/Password**. Under **Settings → Password policy**, select **Require enforcement**, minimum length **8**, and require uppercase, lowercase, numeric and special characters. Leave forced upgrade on sign-in off to preserve existing-account access. Firebase’s default verification email template and hosted action handler are used.
 3. Create a **Cloud Firestore Standard** database in production mode.
-4. Publish the exact rules from `firestore.rules`. The only accessible path is `users/{uid}/encryptions/{id}`, and only the signed-in owner can access it. Do not use open test-mode rules.
+4. Publish the exact rules from `firestore.rules`. The only accessible path is `users/{uid}/encryptions/{id}`, and only the signed-in, email-verified owner can access it. Do not use open test-mode rules.
 5. Check Authentication's authorized domains for your intended host (including `localhost` and `127.0.0.1` for local use when required).
 
 The app does not require Firebase Hosting, billing upgrades, Analytics, or service-account credentials. The existing Flask server continues to serve the application and compute cipher operations.
@@ -357,9 +357,10 @@ npm ci
 npm run build
 npm test
 npm run test:rules
+npm run test:accounts
 ```
 
-The Firebase rules tests use a local emulator with a `demo-` project and synthetic accounts, never the live database. Java 21+ is required for the emulator. Tests cover cross-account and signed-out access, ciphertext/metadata validation, rejection of keys/plaintext, immutable records, rename/delete permissions, pagination, and retry behavior. Python checks remain `python -m unittest discover -s tests`.
+The Firebase rules tests use a local emulator with a `demo-` project and synthetic accounts, never the live database. Java 21+ is required for the emulator. Tests cover cross-account and signed-out access, ciphertext/metadata validation, validated full encryption details, rejection of unverified users, immutable records, rename/delete permissions, pagination, and retry behavior. Python checks remain `python -m unittest discover -s tests`.
 
 The development dependencies include a project-local Node 24 runtime for the SDK and test tools; npm scripts use it without replacing your system Node installation.
 
@@ -368,3 +369,13 @@ On macOS, if port 5000 is occupied, start locally with:
 ```bash
 .venv/bin/python -m flask --app app run --host 127.0.0.1 --port 5001
 ```
+
+### Verification and full-detail history checks (2026-11-21)
+
+- 9 JavaScript validation/password checks, 15 Firestore permission/schema checks, and 1 Auth/Firestore integration check pass.
+- Five live sign-up attempts with intentionally incomplete password requirements were rejected by Firebase; no live test accounts were created.
+- Isolated browser tests verified email resend, the unverified state, one-time verification, refreshed access, RC4/A5/1 automatic saves, persistence after reload, exact key restoration, decryption, and clearing sensitive fields on sign-out. The A5/1 example retained 114 meaningful bits and COUNT 308. See `artifacts/full-history-verified.png`.
+- The live Firebase password policy and verified-owner Firestore rules are published. Actual inbox delivery still needs the recipient to check their email; emulator tests do not deliver real mail.
+- The Python suite has 147 passing tests and the same two pre-existing Base64-padding failures (`test_invalid_padding` and the `QUJD=` case in `test_ciphertext_validation`).
+
+For an isolated manual browser test, start `npx firebase emulators:start --only auth,firestore --project demo-stream-cipher`, then run `PYTHONPATH=. .venv/bin/python tests/browser_server.py` in another terminal and open `http://127.0.0.1:5002`. This test-only server bundles emulator support and substitutes demo configuration; the normal app has no emulator switch. Emulator verification messages are available through its local out-of-band-code endpoint. Stop both processes after testing.
