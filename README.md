@@ -40,7 +40,7 @@ An interactive educational application that implements RC4 and the GSM cipher A5
 | Frontend | HTML5, CSS3, vanilla JavaScript (ES modules), SVG |
 | Tests | Python `unittest` |
 
-There is no Node.js, npm, frontend framework, database or Docker. The frontend loads nothing from the internet, so the app runs offline once Flask is installed.
+The cipher lab uses Flask and vanilla JavaScript. Optional accounts use Firebase Authentication (email/password) and Cloud Firestore. The Firebase SDK is bundled locally; Node.js is needed only to rebuild that bundle or run the Firebase tests. Cipher operations still work without an internet connection once Flask is installed. Sign-in and cloud history require internet access.
 
 ## 3. Project architecture
 
@@ -304,7 +304,7 @@ All POST endpoints take and return JSON. Errors look like `{"error": {"code", "m
 
 Status codes are 400 for invalid input, 404, 405, 413 for oversized requests and 415 for a non-JSON content type. Unexpected errors return a generic 500 message with no internal details.
 
-**Privacy:** nothing is stored. Keys and messages are not logged, API responses are sent with `Cache-Control: no-store`, and the key is not repeated in any response.
+**Privacy:** signed-in encryptions save only the exported ciphertext record, a title and a server timestamp to the user's Firestore history. Keys, plaintext and keystreams are never saved. Guest encryptions are not saved automatically. Keys and messages are not logged, API responses use `Cache-Control: no-store`, and keys are not repeated in responses. Firestore rules enforce account ownership and reject unexpected fields, including nested keys and plaintext.
 
 ## 14. Security limitations
 
@@ -321,3 +321,50 @@ Status codes are 400 for invalid input, 404, 405, 413 for oversized requests and
 - Prohibiting RC4 in TLS: [RFC 7465](https://www.rfc-editor.org/rfc/rfc7465)
 - M. Briceno, I. Goldberg and D. Wagner, *A pedagogical implementation of the GSM A5/1 and A5/2 "voice privacy" encryption algorithms*
 - Osmocom libosmocore: [A5 documentation](https://downloads.osmocom.org/api/latest/libosmocore/gsm/html/group__a5.html), `src/gsm/a5.c` and `tests/a5/a5_test.c`
+
+## 16. Accounts and saved encryptions
+
+Open `/login` to create an email/password account or sign in. The session survives page reloads in the same tab and ends when that browser session closes or you sign out. Password reset is available from the sign-in form. Guests can keep using the entire cipher lab.
+
+While signed in, each successful encryption is saved automatically. The result shows whether saving succeeded and offers a retry when it fails. A guest result can also be saved after signing in by returning to the workspace and selecting **Save to History**. Saving reuses one record ID per result so retries do not create duplicates.
+
+**History** shows the newest 25 records and offers **Load older encryptions**. You can rename, export, permanently delete, or open a record in the Decrypt panel. You must supply its original key; history never stores keys, plaintext, or keystreams. Signing out clears the forms, visible results, and history. Cipher APIs remain public and stateless; Firestore rules protect all saved data directly.
+
+### Firebase project
+
+This checkout uses `eece-455-stream-cipher`. Its public web configuration is in `static/firebase-config.json`. These browser configuration values are not administrator credentials; access is enforced by Firebase Authentication and `firestore.rules`. Never add service-account keys to this repository.
+
+**Setup status (2026-11-21):** the Firebase project, Web app and Email/Password provider are configured. The default Cloud Firestore Standard database is in Frankfurt (`europe-west3`), on the Spark plan, with the tested `firestore.rules` published. Sign-in and private cloud history are connected.
+
+**Live verification (2026-11-21):** a disposable account successfully signed in, automatically saved RC4 and A5/1 examples, retained history across reload, renamed a record, and reopened/decrypted both records. The A5/1 record preserved all 114 meaningful bits and its frame parameters. Sign-out cleared keys, results and displayed history. Inspection confirmed that stored records contain only ciphertext and permitted metadata. Both sample records and the temporary account were deleted afterward; the deleted account could no longer sign in. The user's own account and records were untouched. See `artifacts/history-verified.png` for the test history view.
+
+For another deployment:
+
+1. Register a Firebase Web app and place its public config in `static/firebase-config.json`.
+2. Enable **Authentication → Sign-in method → Email/Password**.
+3. Create a **Cloud Firestore Standard** database in production mode.
+4. Publish the exact rules from `firestore.rules`. The only accessible path is `users/{uid}/encryptions/{id}`, and only the signed-in owner can access it. Do not use open test-mode rules.
+5. Check Authentication's authorized domains for your intended host (including `localhost` and `127.0.0.1` for local use when required).
+
+The app does not require Firebase Hosting, billing upgrades, Analytics, or service-account credentials. The existing Flask server continues to serve the application and compute cipher operations.
+
+### Rebuild the bundled SDK and verify
+
+The checked-in `static/js/firebase.bundle.js` is generated from `frontend/firebase.js`; do not edit the bundle directly. Rebuild it after changing Firebase versions or exports:
+
+```bash
+npm ci
+npm run build
+npm test
+npm run test:rules
+```
+
+The Firebase rules tests use a local emulator with a `demo-` project and synthetic accounts, never the live database. Java 21+ is required for the emulator. Tests cover cross-account and signed-out access, ciphertext/metadata validation, rejection of keys/plaintext, immutable records, rename/delete permissions, pagination, and retry behavior. Python checks remain `python -m unittest discover -s tests`.
+
+The development dependencies include a project-local Node 24 runtime for the SDK and test tools; npm scripts use it without replacing your system Node installation.
+
+On macOS, if port 5000 is occupied, start locally with:
+
+```bash
+.venv/bin/python -m flask --app app run --host 127.0.0.1 --port 5001
+```

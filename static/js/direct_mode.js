@@ -1,6 +1,8 @@
 // Direct Mode: encrypt and decrypt through the API and present the results.
 
 import { api } from "./api.js";
+import { currentUser, saveEncryption, accountError, onAccountChange } from './account.js';
+import { historyRecord } from './history_record.js';
 import {
   clear,
   clearFormError,
@@ -141,7 +143,9 @@ function renderEncryptResult(target, result, handlers) {
       { className: "button-row" },
       el("button", { type: "button", className: "btn btn-primary", text: "Send to Decryption", onclick: handlers.sendToDecrypt }),
       el("button", { type: "button", className: "btn", text: "Export Record", onclick: handlers.exportRecord }),
+      el("button", { type: "button", className: "btn", text: "Save to History", 'data-save-history': true, onclick: handlers.save }),
     ),
+    el('p', { className: 'hint', role: 'status', 'data-save-status': true, text: 'Sign in to save this encryption.' }),
   );
 }
 
@@ -208,6 +212,39 @@ export function initDirectMode(state) {
   const inputFormat = encryptForm.elements.input_format;
   let lastEncrypt = null;
 
+  async function saveResult(entry, uid) {
+    if (!entry || entry.saving || entry.saved) return;
+    const button = encryptResult.querySelector('[data-save-history]');
+    const status = encryptResult.querySelector('[data-save-status]');
+    if (!uid) { state.setView('login'); return; }
+    entry.saving = true;
+    if (button) button.disabled = true;
+    if (status) status.textContent = 'Saving to your history…';
+    try {
+      await saveEncryption(entry.result.record, entry.id, uid);
+      entry.saved = true;
+      if (status) status.textContent = 'Saved to your history. Your key and plaintext were not stored.';
+      if (button) button.textContent = 'Saved to History';
+    } catch (error) {
+      if (status) status.textContent = `Encryption succeeded, but was not saved. ${accountError(error)}`;
+    } finally {
+      entry.saving = false;
+      if (button) button.disabled = Boolean(entry.saved);
+    }
+  }
+  let previousUser = currentUser()?.uid;
+  onAccountChange((next) => {
+    const changedAccount = previousUser && previousUser !== next?.uid;
+    previousUser = next?.uid;
+    if (!changedAccount) return;
+    lastEncrypt = null;
+    encryptForm.reset(); decryptForm.reset();
+    clear(encryptResult); clear(decryptResult);
+    clearFormError(encryptForm); clearFormError(decryptForm);
+    syncCountMode(encryptForm); syncCountMode(decryptForm);
+    state.emit('inputs');
+  });
+
   const updateReadout = () => {
     readout.textContent = lengthReadout(plaintext.value, inputFormat.value);
     plaintext.classList.toggle("mono", inputFormat.value !== "text");
@@ -220,15 +257,20 @@ export function initDirectMode(state) {
   }
 
   async function submit(form, target, call, onSuccess) {
+    const owner = currentUser()?.uid;
+    const algorithm = state.algorithm;
     clearFormError(form);
     const button = form.querySelector('button[type="submit"]');
     button.disabled = true;
     button.classList.add("is-busy");
     try {
-      onSuccess(await call());
+      const result = await call();
+      if (currentUser()?.uid === owner && state.algorithm === algorithm) onSuccess(result);
     } catch (error) {
-      clear(target);
-      showFormError(form, error, state.algorithm);
+      if (currentUser()?.uid === owner && state.algorithm === algorithm) {
+        clear(target);
+        showFormError(form, error, state.algorithm);
+      }
     } finally {
       button.disabled = false;
       button.classList.remove("is-busy");
@@ -271,9 +313,13 @@ export function initDirectMode(state) {
       plaintext: plaintext.value,
       input_format: inputFormat.value,
     };
+    const owner = currentUser()?.uid;
     submit(encryptForm, encryptResult, () => api.encrypt(request), (result) => {
-      lastEncrypt = { request, result };
-      renderEncryptResult(encryptResult, result, { sendToDecrypt, exportRecord });
+      if (currentUser()?.uid !== owner) return;
+      lastEncrypt = { request, result, id: crypto.randomUUID(), saved: false, saving: false };
+      const entry = lastEncrypt;
+      renderEncryptResult(encryptResult, result, { sendToDecrypt, exportRecord, save: () => saveResult(entry, currentUser()?.uid) });
+      if (owner) saveResult(entry, owner);
     });
   });
 
@@ -356,6 +402,27 @@ export function initDirectMode(state) {
     } catch {
       showFormError(decryptForm, { message: "That file is not a valid ciphertext record.", field: null }, state.algorithm);
     }
+  });
+
+  window.addEventListener('history:open', (event) => {
+    try {
+      const record = historyRecord(event.detail);
+      state.setAlgorithm(record.algorithm);
+      state.setView('workspace');
+      decryptForm.reset();
+      clearFormError(decryptForm); clear(decryptResult);
+      decryptForm.elements.ciphertext.value = record.ciphertext;
+      decryptForm.elements.ciphertext_encoding.value = record.encoding;
+      decryptForm.elements.bit_length.value = String(record.bit_length);
+      writeCipherFields(decryptForm, record.algorithm, {
+        key: '', key_encoding: record.key_encoding || 'hex', direction: record.direction,
+        count_mode: record.count_mode, count: String(record.start_count ?? ''), fn: String(record.start_fn ?? ''),
+      });
+      syncCountMode(decryptForm);
+      const keyField = record.algorithm === 'rc4' ? decryptForm.elements.rc4_key : decryptForm.elements.a51_key;
+      decryptForm.scrollIntoView({behavior: 'smooth', block: 'start'});
+      keyField.focus({preventScroll: true});
+    } catch (error) { showFormError(decryptForm, error, state.algorithm); }
   });
 
   function onAlgorithmChange() {

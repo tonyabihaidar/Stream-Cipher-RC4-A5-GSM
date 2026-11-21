@@ -33,7 +33,8 @@ mimetypes.add_type("text/css", ".css")
 MAX_REQUEST_BYTES = 1024 * 1024
 CONTENT_SECURITY_POLICY = (
     "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
-    "connect-src 'self'; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    "connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com "
+    "https://firestore.googleapis.com; font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
 )
 
 logger = logging.getLogger(__name__)
@@ -86,6 +87,11 @@ def create_app() -> Flask:
 
     @app.get("/")
     def index():
+        return render_template("index.html")
+
+    @app.get("/login")
+    @app.get("/history")
+    def account_page():
         return render_template("index.html")
 
     @app.get("/api/health")

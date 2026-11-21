@@ -9,13 +9,14 @@ import { api } from "./api.js";
 import { initDirectMode } from "./direct_mode.js";
 import { initTour } from "./tour.js";
 import { initVisualizationMode } from "./visualization_mode.js";
+import { initAccount } from "./account.js";
 
 const ALGORITHM_NAMES = { rc4: "RC4", a51: "A5/1" };
 
 class AppState {
   constructor() {
     this.algorithm = "rc4";
-    this.view = "workspace";
+    this.view = location.pathname === '/login' ? 'login' : location.pathname === '/history' ? 'history' : 'workspace';
     this.examples = [];
     this.listeners = new Set();
   }
@@ -37,6 +38,7 @@ class AppState {
   setView(view) {
     if (view === this.view) return;
     this.view = view;
+    history.replaceState(null, '', view === 'login' || view === 'history' ? `/${view}` : '/');
     this.emit("view");
   }
 }
@@ -71,6 +73,7 @@ async function main() {
   });
   syncShell(state);
   initTour(state);
+  initAccount(state);
 
   try {
     state.examples = (await api.examples()).examples;

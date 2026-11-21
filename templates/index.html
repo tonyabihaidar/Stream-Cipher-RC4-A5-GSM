@@ -69,6 +69,7 @@
         <p class="subtitle">Project 9 | RC4 &amp; A5/1 GSM Encryption</p>
       </div>
     </div>
+    <div class="account-bar"><span id="account-name">Guest session</span><button type="button" class="btn" id="account-login" data-set-view="login">Sign in</button><button type="button" class="btn" id="account-logout" hidden>Sign out</button></div>
   </header>
 
   <nav class="main-nav" aria-label="Main">
@@ -79,6 +80,7 @@
     <div class="tabs" role="group" aria-label="Section">
       <button type="button" class="tab-btn" data-set-view="workspace" aria-pressed="true">Encrypt &amp; Decrypt</button>
       <button type="button" class="tab-btn" data-set-view="learn" aria-pressed="false" data-tour="learn">Learn Your Algorithms</button>
+      <button type="button" class="tab-btn" data-set-view="history" aria-pressed="false">History</button>
     </div>
     <button type="button" class="help-btn" id="help-tour" data-tour="help" aria-haspopup="dialog">
       <span class="help-icon" aria-hidden="true">?</span> Help
@@ -86,6 +88,7 @@
   </nav>
 
   <main id="main">
+    {% include 'account.html' %}
     <!-- ======================= ENCRYPT, DECRYPT AND STEPS ======================= -->
     <section id="view-workspace" class="view" data-view-panel="workspace">
       <div class="workspace-bar">
@@ -333,7 +336,7 @@
   </main>
 
   <footer class="app-footer">
-    <p>Computation stays on this machine, and keys and messages are not stored. RC4 and A5/1 are not recommended for protecting modern communications.</p>
+    <p>Cipher operations run on the app server. Signed-in encryptions save ciphertext and settings to your private history; secret keys, plaintext and keystreams are never saved. RC4 and A5/1 are for educational use.</p>
   </footer>
 </body>
 </html>

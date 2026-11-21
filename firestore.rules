@@ -1,0 +1,42 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function owner(uid) { return request.auth != null && request.auth.uid == uid; }
+    function validRecord(r) {
+      let common = ['record_type', 'version', 'algorithm', 'encoding', 'ciphertext', 'bit_length'];
+      return r is map && r.keys().hasAll(common)
+        && r.record_type == 'eece455.stream-cipher.ciphertext' && r.version == 1
+        && r.encoding == 'hex' && r.ciphertext is string
+        && r.ciphertext.size() > 0 && r.ciphertext.size() <= 32768
+        && r.ciphertext.matches('([0-9A-F]{2})+')
+        && r.bit_length is int && r.bit_length > 0
+        && r.bit_length <= r.ciphertext.size() * 4
+        && r.bit_length > r.ciphertext.size() * 4 - 8
+        && ((r.algorithm == 'rc4'
+          && r.keys().hasOnly(common.concat(['key_encoding']))
+          && r.key_encoding in ['text', 'hex'] && r.bit_length % 8 == 0)
+        || (r.algorithm == 'a51'
+          && r.keys().hasOnly(common.concat(['direction', 'count_mode', 'start_count', 'start_fn', 'segment_count', 'count_advance']))
+          && r.direction in ['downlink', 'uplink'] && r.count_mode in ['count', 'fn']
+          && r.start_count is int && r.start_count >= 0 && r.start_count <= 4194303
+          && ((r.count_mode == 'count' && r.start_fn == null && r.count_advance == 'COUNT + 1 mod 2^22')
+            || (r.count_mode == 'fn' && r.start_fn is int && r.start_fn >= 0 && r.start_fn <= 2715647 && r.count_advance == 'FN + 1 mod 2715648'))
+          && r.segment_count is int && r.segment_count > 0
+          && (r.segment_count - 1) * 114 < r.bit_length && r.segment_count * 114 >= r.bit_length));
+    }
+    function validEntry(d) {
+      return d.keys().hasOnly(['title', 'createdAt', 'record'])
+        && d.keys().hasAll(['title', 'createdAt', 'record'])
+        && d.title is string && d.title.size() > 0 && d.title.size() <= 100
+        && d.createdAt is timestamp && validRecord(d.record);
+    }
+    match /users/{uid}/encryptions/{id} {
+      allow read, delete: if owner(uid);
+      allow create: if owner(uid) && validEntry(request.resource.data)
+        && request.resource.data.createdAt == request.time;
+      allow update: if owner(uid) && validEntry(request.resource.data)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title']);
+    }
+    // No public collections, cross-account access, or other writes.
+  }
+}
